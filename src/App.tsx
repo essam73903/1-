@@ -7,18 +7,21 @@ import {
   PlusCircle, FileSpreadsheet, ListFilter, HelpCircle, PhoneCall, FolderPlus,
   Paperclip, Eye, Upload, Sparkles, Sun, Moon, ArrowUpDown,
   MessageSquare, Send, Clock, Smartphone, Building, Printer,
-  Facebook, Instagram, Linkedin, Youtube, Twitter, X, Minimize2, Globe
+  Facebook, Instagram, Linkedin, Youtube, Twitter, X, Minimize2, Globe,
+  MapPin, Megaphone, Share2, Check, ExternalLink, Bell
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 
 import { 
   Service, BookingRequest, Transaction, AttachedFile,
-  DEFAULT_SERVICES, INITIAL_TRANSACTIONS, INITIAL_BOOKINGS 
+  DEFAULT_SERVICES, INITIAL_TRANSACTIONS, INITIAL_BOOKINGS,
+  Job, Announcement, JobApplication, INITIAL_JOBS, INITIAL_ANNOUNCEMENTS
 } from './types';
 
 import PasscodeModal from './components/PasscodeModal';
 import InvoiceDetailModal from './components/InvoiceDetailModal';
 import ServiceParallaxCard from './components/ServiceParallaxCard';
+import CheckoutPaymentModal from './components/CheckoutPaymentModal';
 
 // WhatsApp Notification Log Interface
 export interface WhatsAppLog {
@@ -358,7 +361,7 @@ export default function App() {
     return dict[lang][key] || key;
   };
 
-  const [selectedRegionTab, setSelectedRegionTab] = useState<'all' | 'asia' | 'africa'>('all');
+  const [selectedRegionTab, setSelectedRegionTab] = useState<'all' | 'asia' | 'africa' | 'europe_americas'>('all');
 
   const getWelcomeText = () => {
     if (lang === 'en') {
@@ -524,8 +527,34 @@ export default function App() {
     return cat ? cat.nameAr : catId;
   };
 
-  // Current tab: 'home' | 'track' | 'admin'
-  const [activeTab, setActiveTab] = useState<'home' | 'track' | 'admin'>('home');
+  // Current tab: 'home' | 'track' | 'jobs' | 'admin'
+  const [activeTab, setActiveTab] = useState<'home' | 'track' | 'jobs' | 'admin'>('home');
+
+  // Real-time live date/time state to ensure same day dynamic accuracy
+  const [liveTime, setLiveTime] = useState(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`;
+  });
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const hh = String(now.getHours()).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const ss = String(now.getSeconds()).padStart(2, '0');
+      setLiveTime(`${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
   
   // Admin Authentication State
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
@@ -549,8 +578,8 @@ export default function App() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
 
-  // Admin Inner-Tab: 'ledger' | 'requests' | 'services' | 'stats' | 'whatsapp'
-  const [adminTab, setAdminTab] = useState<'stats' | 'requests' | 'ledger' | 'services' | 'whatsapp'>('stats');
+  // Admin Inner-Tab: 'ledger' | 'requests' | 'services' | 'stats' | 'whatsapp' | 'jobs'
+  const [adminTab, setAdminTab] = useState<'stats' | 'requests' | 'ledger' | 'services' | 'whatsapp' | 'jobs'>('stats');
 
   // New Transaction Form State (Admin)
   const [txClientName, setTxClientName] = useState('');
@@ -692,6 +721,113 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('sm_bg_selector_collapsed', String(isBgSelectorCollapsed));
   }, [isBgSelectorCollapsed]);
+
+  // Real Checkout Payment Wizard State
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [checkoutService, setCheckoutService] = useState<Service | null>(null);
+
+  // Jobs & Announcements State
+  const [jobs, setJobs] = useState<Job[]>(() => {
+    const saved = localStorage.getItem('sm_jobs');
+    return saved ? JSON.parse(saved) : INITIAL_JOBS;
+  });
+
+  const [announcements, setAnnouncements] = useState<Announcement[]>(() => {
+    const saved = localStorage.getItem('sm_announcements');
+    return saved ? JSON.parse(saved) : INITIAL_ANNOUNCEMENTS;
+  });
+
+  const [jobApplications, setJobApplications] = useState<JobApplication[]>(() => {
+    const saved = localStorage.getItem('sm_job_applications');
+    return saved ? JSON.parse(saved) : [
+      {
+        id: 'app-1',
+        jobId: 'job-1',
+        jobTitle: 'معقب معاملات ميداني',
+        applicantName: 'سعود بن عبد العزيز الحربي',
+        applicantPhone: '0501234789',
+        applicantEmail: 's.alharbi@samajobs.com',
+        coverLetter: 'أتقدم لشغل وظيفة معقب ميداني بالرياض. لدي خبرة ٣ سنوات في تفويض الخارجية ومنصات وزارة التجارة وإنجاز معاملات الجوازات بموثوقية وسرعة فائقة.',
+        cvFileName: 'saud_cv_clearence.pdf',
+        cvFileData: 'data:application/pdf;base64,U2FtcGxlUERG',
+        date: '2026-05-30T14:15:00Z',
+        status: 'pending'
+      },
+      {
+        id: 'app-2',
+        jobId: 'job-2',
+        jobTitle: 'موظف خدمة عملاء واستقبل',
+        applicantName: 'ياسمين بنت عبد الله القحطاني',
+        applicantPhone: '0562345678',
+        applicantEmail: 'yasmin.q@samajobs.com',
+        coverLetter: 'لدي شغف بالمسؤولية الإدارية والترحيب بضيوف ومراجعي مكتب سما المملكة الموقر. أطمح للتطوير الدائم وخدمة المعقبيين والمراجعين بجدة والرد السريع.',
+        cvFileName: 'yasmin_q_resume.pdf',
+        cvFileData: 'data:application/pdf;base64,U2FtcGxlUERG',
+        date: '2026-05-31T08:30:00Z',
+        status: 'pending'
+      },
+      {
+        id: 'app-3',
+        jobId: 'job-3',
+        jobTitle: 'مستشار تطوير أعمال ومبيعات خدمات',
+        applicantName: 'فيصل بن محمد الشمراني',
+        applicantPhone: '0543210987',
+        applicantEmail: 'f.shamrani@samajobs.com',
+        coverLetter: 'متخصص مبيعات B2B وبناء الشركات التعاقدية من الفئات المتوسطة والكبيرة. أهدر المراجعات لتطوير عقد مبيعات المكتب وتقديم عروض تنافسية.',
+        cvFileName: 'f_shamrani_advisor_cv.pdf',
+        cvFileData: 'data:application/pdf;base64,U2FtcGxlUERG',
+        date: '2026-05-31T11:22:00Z',
+        status: 'pending'
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sm_jobs', JSON.stringify(jobs));
+  }, [jobs]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_announcements', JSON.stringify(announcements));
+  }, [announcements]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_job_applications', JSON.stringify(jobApplications));
+  }, [jobApplications]);
+
+  // Public Jobs view state
+  const [jobsSubTab, setJobsSubTab] = useState<'all' | 'jobs' | 'announcements'>('all');
+  const [jobsSearchQuery, setJobsSearchQuery] = useState('');
+  const [selectedApplyJob, setSelectedApplyJob] = useState<Job | null>(null);
+
+  // Application form fields
+  const [appApplicantName, setAppApplicantName] = useState('');
+  const [appApplicantPhone, setAppApplicantPhone] = useState('');
+  const [appApplicantEmail, setAppApplicantEmail] = useState('');
+  const [appCoverLetter, setAppCoverLetter] = useState('');
+  const [appCvFileName, setAppCvFileName] = useState('');
+  const [appCvFileData, setAppCvFileData] = useState('');
+  const [appSubmittedSuccess, setAppSubmittedSuccess] = useState(false);
+
+  // Admin section jobs tab states
+  const [adminJobSubTab, setAdminJobSubTab] = useState<'manage_jobs' | 'manage_announcements' | 'view_applications'>('manage_jobs');
+  
+  // Admin Editing state for Job
+  const [adminEditingJob, setAdminEditingJob] = useState<Job | null>(null);
+  const [adminJobTitle, setAdminJobTitle] = useState('');
+  const [adminJobDepartment, setAdminJobDepartment] = useState('');
+  const [adminJobLocation, setAdminJobLocation] = useState('');
+  const [adminJobType, setAdminJobType] = useState<'full-time' | 'part-time' | 'contract'>('full-time');
+  const [adminJobSalary, setAdminJobSalary] = useState('');
+  const [adminJobDescription, setAdminJobDescription] = useState('');
+  const [adminJobRequirements, setAdminJobRequirements] = useState('');
+  
+  // Admin Editing state for Announcement
+  const [adminEditingAnnouncement, setAdminEditingAnnouncement] = useState<Announcement | null>(null);
+  const [adminAnnTitle, setAdminAnnTitle] = useState('');
+  const [adminAnnContent, setAdminAnnContent] = useState('');
+  const [adminAnnCategory, setAdminAnnCategory] = useState<'alert' | 'offer' | 'news' | 'holiday'>('news');
+  const [adminAnnIsPinned, setAdminAnnIsPinned] = useState(false);
+
 
   const makkahImages = {
     sunrise: makkahSunriseImg,
@@ -915,7 +1051,7 @@ export default function App() {
     e.target.value = ''; // Reset input to allow duplicate selection
   };
   
-  // Submit Customer booking from public site
+  // Submit Customer booking from public site (triggers secure payment checkout wizard)
   const handleClientBookingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientName.trim() || !clientPhone.trim() || !selectedServiceId) {
@@ -926,30 +1062,68 @@ export default function App() {
     const matchedService = services.find(s => s.id === selectedServiceId);
     if (!matchedService) return;
 
-    const newBooking: BookingRequest = {
-      id: `bk-${Date.now()}`,
-      clientName: clientName.trim(),
-      phoneNumber: clientPhone.trim(),
-      serviceId: selectedServiceId,
-      serviceName: matchedService.name,
-      status: 'pending',
-      notes: clientNotes.trim(),
-      date: new Date().toISOString(),
-      attachedFileName: attachedFiles[0] ? attachedFiles[0].name : undefined,
-      attachedFileData: attachedFiles[0] ? attachedFiles[0].data : undefined,
-      attachedFileSize: attachedFiles[0] ? attachedFiles[0].size : undefined,
-      attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined
-    };
+    // Save selected service in checkout contextual state to load calculated fees, then trigger modal
+    setCheckoutService(matchedService);
+    setIsCheckoutOpen(true);
+  };
 
+  // Called when payment flow successfully completes!
+  const handleCheckoutSuccess = (
+    newBooking: BookingRequest, 
+    paymentMethod: 'mada' | 'visa' | 'applepay' | 'stcpay' | 'bank_transfer' | 'cash', 
+    amount: number, 
+    details?: any
+  ) => {
+    // 1. Add the booking request (marked paid where appropriate)
     const updatedBookings = [newBooking, ...bookings];
     setBookings(updatedBookings);
 
+    // 2. Automatically generate the corresponding Tax Simplified Invoice in transactions
+    // This allows customers and admin to download/print the standard ZATCA-compliant invoice directly!
+    const svc = services.find(s => s.id === newBooking.serviceId) || checkoutService;
+    const govFee = svc ? svc.govFee : 0;
+    const officeFee = svc ? svc.officeFee : 200;
+    const calculatedTax = officeFee * 0.15;
+    const invoiceCode = `SM-${new Date().getFullYear().toString().substring(2)}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${(transactions.length + 1).toString().padStart(3, '0')}`;
+    
+    let txtNotes = '';
+    if (paymentMethod === 'bank_transfer') {
+      txtNotes = `حوالة بنكية معلقة للدراسة والتدقيق المصرفي على بنك: ${details?.bankName || 'مصرف الراجحي'}. رقم العملية البنكية: ${details?.transactionId || 'تم تزويده'}`;
+    } else if (paymentMethod === 'cash') {
+      txtNotes = `تأمين قيد مالي معلق لطلب سداد نقدي بمقر مكتب سما المملكة.`;
+    } else {
+      txtNotes = `مدفوعة بالكامل إلكترونياً عبر بوابة سداد الآمنة لمكتب سما المملكة (${paymentMethod.toUpperCase()}). رقم العملية البنكية الموحد: ${details?.transactionId || 'N/A'}`;
+    }
+
+    const newTx: Transaction = {
+      id: `tx-${Date.now()}`,
+      clientName: newBooking.clientName,
+      serviceName: newBooking.serviceName,
+      govFee: govFee,
+      officeFee: officeFee,
+      tax: calculatedTax,
+      total: amount,
+      date: new Date().toISOString(),
+      invoiceNumber: invoiceCode,
+      notes: txtNotes
+    };
+    
+    setTransactions(prev => [newTx, ...prev]);
+
+    // Update feedback for user view
+    let feedbackAr = `تم حجز معاملتكم بنجاح ومصادقة عملية السداد لـ (${newBooking.serviceName}). الرقم المرجعي لمعاملتكم: ${newBooking.id.substring(3)}.`;
+    if (paymentMethod === 'bank_transfer') {
+      feedbackAr = `تم استلام تفاصيل التحويل البنكي وحفظ معاملتك بنجاح لتأشيرة (${newBooking.serviceName}). الرقم المرجعي: ${newBooking.id.substring(3)}. جاري التدقيق من محاسب المكتب.`;
+    } else if (paymentMethod === 'cash') {
+      feedbackAr = `تم حجز معاملتك لخدمة (${newBooking.serviceName}) بنجاح بدورة سداد نقدي معلقة. الرقم المرجعي: ${newBooking.id.substring(3)}. يرجى تزويد الكاشير بمقر المكتب بالرمز لإكمال السداد البدء بالتعقيب.`;
+    }
+
     setSubmissionFeedback({ 
       success: true, 
-      msg: `تم إرسال طلبك بنجاح لمكتب سما المملكة الرقم المرجعي: ${newBooking.id.substring(3)}` 
+      msg: feedbackAr
     });
 
-    // Reset fields
+    // Reset form fields
     setClientName('');
     setClientPhone('');
     setClientNotes('');
@@ -960,8 +1134,8 @@ export default function App() {
     setAttachedFiles([]);
     setUploadProgresses({});
 
-    // Pre-populate track inquiry immediately for customer's ease
-    setSearchPhone(clientPhone.trim());
+    // Pop search phone automatically to help client track instantly
+    setSearchPhone(newBooking.phoneNumber);
   };
 
   // Client Request status lookup
@@ -1035,6 +1209,45 @@ export default function App() {
     
     // Switch to active financial ledger
     setAdminTab('ledger');
+  };
+
+  // Handler to simulate a random transaction for today's date instantly to test daily revenue
+  const handleSimulateDailyTransaction = () => {
+    const clients = [
+      'سلمان بن عبد العزيز المقرن',
+      'مؤسسة النور الساطع للمقاولات',
+      'هيفاء بنت طلال العتيبي',
+      'حلول الأعمال المبتكرة للخدمات',
+      'عبد الرحمن بن سليمان الفهد'
+    ];
+    const servicesPool = services.length > 0 ? services : DEFAULT_SERVICES;
+    const randomService = servicesPool[Math.floor(Math.random() * servicesPool.length)];
+    const randomClient = clients[Math.floor(Math.random() * clients.length)];
+    
+    // Calculate values
+    const govFee = randomService.govFee;
+    const officeFee = randomService.officeFee;
+    const tax = Math.round(officeFee * 0.15 * 100) / 100;
+    const total = govFee + officeFee + tax;
+    
+    // Generate a beautiful new invoice number
+    const lastNum = transactions.length + 1;
+    const invoiceNumber = `SM-2605-${String(lastNum).padStart(3, '0')}`;
+    
+    const newTx: Transaction = {
+      id: `sim-tx-${Date.now()}`,
+      clientName: randomClient,
+      serviceName: randomService.name,
+      govFee,
+      officeFee,
+      tax,
+      total,
+      date: new Date().toISOString(), // Today!
+      invoiceNumber,
+      notes: 'معاملة تجريبية مدعومة من لوحة القيادة لقياس التدفق اليومي الهيكلي للمنشأة اليوم'
+    };
+    
+    setTransactions(prev => [newTx, ...prev]);
   };
 
   // Add Dynamic Service
@@ -1304,7 +1517,7 @@ export default function App() {
   };
 
   // Handling navigation tabs
-  const handleTabClick = (tab: 'home' | 'track' | 'admin') => {
+  const handleTabClick = (tab: 'home' | 'track' | 'jobs' | 'admin') => {
     if (tab === 'admin') {
       if (isAdminAuthenticated) {
         setActiveTab('admin');
@@ -1334,6 +1547,33 @@ export default function App() {
   const totalOfficeRevenues = transactions.reduce((sum, t) => sum + t.officeFee, 0);
   const totalVATCollected = transactions.reduce((sum, t) => sum + t.tax, 0);
   const totalOverallAccountingVolume = totalGovSpent + totalOfficeRevenues + totalVATCollected;
+
+  // Today's dynamic metrics
+  const todayDateStr = new Date().toISOString().split('T')[0]; // Current day (e.g., 2026-05-31)
+  const todayTransactions = transactions.filter(t => {
+    if (!t.date) return false;
+    return t.date.startsWith(todayDateStr);
+  });
+  const todayOfficeRevenue = todayTransactions.reduce((sum, t) => sum + t.officeFee, 0);
+  const todayGovSpent = todayTransactions.reduce((sum, t) => sum + t.govFee, 0);
+  const todayVATCollected = todayTransactions.reduce((sum, t) => sum + t.tax, 0);
+  const todayOverallAccountingVolume = todayGovSpent + todayOfficeRevenue + todayVATCollected;
+
+  // Requests Pending vs Completed Ratio
+  const pendingRequestsCount = bookings.filter(b => b.status === 'pending').length;
+  const completedRequestsCount = bookings.filter(b => b.status === 'completed').length;
+  const processingRequestsCount = bookings.filter(b => b.status === 'processing').length;
+  const cancelledRequestsCount = bookings.filter(b => b.status === 'cancelled').length;
+  
+  // Ratio string: ratio of Completed over Pending
+  const completedToPendingRatio = pendingRequestsCount > 0 
+    ? (completedRequestsCount / pendingRequestsCount).toFixed(1) 
+    : completedRequestsCount > 0 ? `${completedRequestsCount}` : '0';
+  
+  // Sorted list of recently joined applicants
+  const recentJobApplications = [...jobApplications]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 4);
 
   return (
     <div 
@@ -1385,6 +1625,14 @@ export default function App() {
               </button>
 
               <button 
+                onClick={() => handleTabClick('jobs')}
+                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'jobs' ? 'bg-amber-600 text-slate-950 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+              >
+                <Briefcase className="w-4 h-4" />
+                <span>{lang === 'ar' ? 'الوظائف والإعلانات' : 'Jobs & Careers'}</span>
+              </button>
+
+              <button 
                 onClick={() => handleTabClick('admin')}
                 className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'admin' ? 'bg-slate-200 text-slate-950 shadow-md' : 'bg-slate-800 border border-slate-700 text-amber-500 hover:bg-slate-700'}`}
               >
@@ -1424,9 +1672,9 @@ export default function App() {
             <span className="text-slate-300 font-sans font-medium">{t('heroSubtitle')}</span>
           </div>
           <div className="flex items-center gap-4 text-slate-400">
-            <span>{t('localTimePrefix')} <strong className="text-slate-200">2026-05-19</strong></span>
+            <span>{t('localTimePrefix')} <strong className="text-slate-200 font-mono">{liveTime}</strong></span>
             <span className="hidden sm:inline">|</span>
-            <span>{t('currentUserPrefix')} <strong className="text-amber-500">essam77142@gmail.com</strong></span>
+            <span>{t('currentUserPrefix')} <strong className="text-amber-500">essam73903@gmail.com</strong></span>
           </div>
         </div>
       </div>
@@ -1590,35 +1838,35 @@ export default function App() {
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-[10px] font-black border border-emerald-500/20 uppercase tracking-wider">
                     <Globe className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                    <span>{lang === 'en' ? 'Verified Publishing & Service Region' : 'نطاق النشر الجغرافي والخدماتي المعتمد'}</span>
+                    <span>{lang === 'en' ? 'Verified Global Publishing & Service Network' : 'نطاق النشر الجغرافي والخدماتي العالمي المعتمد'}</span>
                   </div>
                   <h2 className="text-xl md:text-2xl font-black text-slate-100 font-sans text-right">
-                    {lang === 'en' ? 'International Operations Scope: Asia & Africa' : 'نطاق النشر الجغرافي والأعمال: قارتي آسيا وأفريقيا'}
+                    {lang === 'en' ? 'Global Operations Scope: Worldwide Coverage' : 'نطاق النشر الجغرافي والأعمال: عالمي متكامل'}
                   </h2>
                   <p className="text-slate-400 text-xs text-right max-w-3xl leading-relaxed font-sans">
                     {lang === 'en' 
-                      ? 'Official electronic publishing and integration services of Sama Al-Mamlakah Office connecting cross-border visa systems, transit, and cargo systems across Asian and African continents directly with Saudi Arabia.'
-                      : 'منظومة النشر الرقمي لخدمات مكتب سما المملكة المعتمدة لربط وتخليص المعاملات والعمليات الدولية المباشرة للتأشيرات والخدمات عبر دول آسيا والشرق الأقصى وأفريقيا لشراكات ممتدة.'}
+                      ? 'Official electronic publishing and integration services of Sama Al-Mamlakah Office connecting cross-border visa systems, transit, and cargo systems across Earth continents directly with Saudi Arabia.'
+                      : 'منظومة النشر الرقمي لخدمات مكتب سما المملكة المعتمدة لربط وتخليص المعاملات والعمليات الدولية المباشرة للتأشيرات والخدمات عبر جميع القارات بربط مباشر مع بوابات التخليص والمعاملات.'}
                   </p>
                 </div>
 
                 {/* Switcher Tabs */}
-                <div className="flex bg-slate-950 p-1.5 rounded-xl border border-slate-800/80 w-full md:w-auto shrink-0 select-none">
+                <div className="flex flex-wrap bg-slate-950 p-1.5 rounded-xl border border-slate-800/80 w-full md:w-auto shrink-0 select-none gap-1">
                   <button
                     type="button"
                     onClick={() => setSelectedRegionTab('all')}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg font-bold text-xs transition-all ${
                       selectedRegionTab === 'all' 
                         ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
                         : 'text-slate-400 hover:text-white cursor-pointer'
                     }`}
                   >
-                    {lang === 'en' ? 'Global View' : 'الكل المعروض'}
+                    {lang === 'en' ? 'Global View' : 'النطاق الشامل'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedRegionTab('asia')}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg font-bold text-xs transition-all ${
                       selectedRegionTab === 'asia' 
                         ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
                         : 'text-slate-400 hover:text-white cursor-pointer'
@@ -1629,13 +1877,24 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setSelectedRegionTab('africa')}
-                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg font-bold text-xs transition-all ${
                       selectedRegionTab === 'africa' 
                         ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
                         : 'text-slate-400 hover:text-white cursor-pointer'
                     }`}
                   >
                     {lang === 'en' ? 'Africa Continent' : 'قارة أفريقيا'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRegionTab('europe_americas')}
+                    className={`flex-1 md:flex-none px-3.5 py-2 rounded-lg font-bold text-xs transition-all ${
+                      selectedRegionTab === 'europe_americas' 
+                        ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
+                        : 'text-slate-400 hover:text-white cursor-pointer'
+                    }`}
+                  >
+                    {lang === 'en' ? 'Europe & Americas' : 'أوروبا والأمريكتين'}
                   </button>
                 </div>
               </div>
@@ -1671,7 +1930,7 @@ export default function App() {
                         
                         {/* Dynamic list of cities/nodes */}
                         <div className="pt-2">
-                          <span className="text-[10px] text-slate-500 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
+                          <span className="text-[10px] text-slate-505 text-slate-400 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
                           <div className="flex flex-wrap gap-1 justify-end">
                             {['مومباي', 'مانيلا', 'جاكرتا', 'دكا', 'نيودلهي', 'كراتشي', 'كولومبو'].map(node => (
                               <span key={node} className="text-[9px] bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-sans">
@@ -1715,7 +1974,7 @@ export default function App() {
 
                         {/* Dynamic list of cities/nodes */}
                         <div className="pt-2">
-                          <span className="text-[10px] text-slate-500 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
+                          <span className="text-[10px] text-slate-505 text-slate-400 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
                           <div className="flex flex-wrap gap-1 justify-end">
                             {['القاهرة', 'الدار البيضاء', 'الخرطوم', 'أديس أبابا', 'نيروبي', 'تونس'].map(node => (
                               <span key={node} className="text-[9px] bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-sans">
@@ -1732,6 +1991,50 @@ export default function App() {
                       </div>
                     </div>
                   )}
+
+                  {/* EUROPE & AMERICAS CARD */}
+                  {(selectedRegionTab === 'all' || selectedRegionTab === 'europe_americas') && (
+                    <div className="bg-slate-950/70 p-5 rounded-xl border border-slate-800 flex flex-col justify-between hover:border-indigo-500/30 transition-all group relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-500/5 rounded-bl-full pointer-events-none group-hover:bg-indigo-500/10 transition-colors"></div>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-md font-bold tracking-wider font-mono">
+                            EUROPE & AMERICAS
+                          </span>
+                          <div className="bg-indigo-500/10 text-indigo-400 p-2 rounded-lg border border-indigo-500/20">
+                            <Compass className="w-4 h-4 text-indigo-400" />
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-200 text-right group-hover:text-indigo-400 transition-colors">
+                            {lang === 'en' ? 'Europe & Americas Diplomatic Gateway' : 'بوابة أوروبا والأمريكتين لربط المعاملات'}
+                          </h3>
+                          <p className="text-slate-400 text-xs text-right mt-1.5 font-sans leading-relaxed">
+                            {lang === 'en'
+                              ? 'Handling priority commercial delegations, tourist visas clearance, academic validation, and global verification of documents across EU countries, UK, USA, and Canada.'
+                              : 'تأمين وتسجيل تأشيرات الوفود التجارية، السياحة المتميزة، تصديق الوثائق الأكاديمية والمهنية، والربط الحكومي الموثق مع الاتحاد الأوروبي والمملكة المتحدة والولايات المتحدة وكندا بمرونة كاملة.'}
+                          </p>
+                        </div>
+
+                        {/* Dynamic list of cities/nodes */}
+                        <div className="pt-2">
+                          <span className="text-[10px] text-slate-505 text-slate-400 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {['لندن', 'باريس', 'واشنطن', 'نيويورك', 'فرانكفورت', 'روما', 'تورونتو'].map(node => (
+                              <span key={node} className="text-[9px] bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-sans">
+                                {node}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-900 pt-3 mt-4 flex justify-between items-center text-[10px]">
+                        <span className="text-slate-500 font-sans">{lang === 'en' ? 'Target Audience Coverage' : 'تغطية الجمهور المستهدف'}</span>
+                        <strong className="text-indigo-400 font-extrabold font-sans">+ 14,200 {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Telemetry Real-time network health - occupies 4 cols on lg */}
@@ -1739,7 +2042,7 @@ export default function App() {
                   <div className="space-y-3">
                     <h4 className="font-extrabold text-xs text-slate-300 uppercase tracking-widest text-right flex items-center justify-end gap-1.5 border-b border-slate-900 pb-2">
                       <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                      <span>{lang === 'en' ? 'Regional Platform Telemetry' : 'لوحة متابعة الأداء الإقليمي في آسيا وأفريقيا'}</span>
+                      <span>{lang === 'en' ? 'Global Platform Telemetry' : 'لوحة متابعة الأداء الجغرافي العالمي للمنصة'}</span>
                     </h4>
 
                     <div className="space-y-2 font-sans select-none">
@@ -1761,7 +2064,7 @@ export default function App() {
                       {/* Stat 4 */}
                       <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-800 text-[10px]">
                         <span className="text-slate-400">{lang === 'en' ? 'Connected Embassies' : 'السفارات والقنصليات المعرفّة'}</span>
-                        <strong className="text-indigo-400 font-bold">٤٥ {lang === 'en' ? 'Diplomatic Mission' : 'بعثة دبلوماسية'}</strong>
+                        <strong className="text-indigo-400 font-bold">٨٤ {lang === 'en' ? 'Diplomatic Mission' : 'بعثة دبلوماسية عالمية'}</strong>
                       </div>
                     </div>
                   </div>
@@ -1770,8 +2073,8 @@ export default function App() {
                     <span className="text-[9px] text-slate-500 font-bold block text-right font-sans">{lang === 'en' ? 'Operations Note:' : 'ملاحظة تشغيلية مهمة:'}</span>
                     <p className="text-[9px] text-slate-400 leading-normal text-right font-sans">
                       {lang === 'en'
-                        ? 'Website publishing sphere is regulated in accordance with the national digitisation roadmap 2026. Data streams are secured via private channels.'
-                        : 'يتم نشر الموقع الرسمي بكفاءة تامة وتغطية إلكترونية نشطة في قارتي آسيا وأفريقيا لتقديم أعلى معايير تخليص التأشيرات والإجراءات بدعم الفوترة الفورية بالمنطقة.'}
+                        ? 'Website publishing sphere is globally distributed and highly optimized across all international nodes. Data streams are secured via globally redundant private channels.'
+                        : 'يتم نشر الموقع الرسمي بنطاق جغرافي عالمي وتغطية إلكترونية نشطة ممتدة حول العالم لتقديم أعلى معايير تخليص المعاملات والربط الدبلوماسي العابر للقارات.'}
                     </p>
                   </div>
                 </div>
@@ -1975,7 +2278,7 @@ export default function App() {
                               <div key={fileName} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 select-none relative z-30 animate-fade-in font-sans">
                                 <div className="flex items-center justify-between text-xs">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <FileText className="w-4 h-4 text-amber-650 flex-shrink-0 animate-pulse" />
+                                    <FileText className="w-4 h-4 text-amber-600 flex-shrink-0 animate-pulse" />
                                     <div className={`${lang === 'en' ? 'text-left' : 'text-right'} min-w-0`}>
                                       <p className="font-bold text-slate-700 truncate max-w-[250px]" title={fileName}>{fileName}</p>
                                       <p className="text-[9px] text-slate-400 font-mono">{info.size}</p>
@@ -2108,10 +2411,21 @@ export default function App() {
                           }}
                         >
                           <div>
-                            <div className="flex justify-between items-center mb-3">
-                              <span className="font-mono text-xs text-slate-500 font-bold">
-                                {lang === 'en' ? `Tran ID: #${b.id.substring(3, 9)}` : `معاملة ID: #${b.id.substring(3, 9)}`}
-                              </span>
+                            <div className="flex flex-wrap gap-2 items-center justify-between mb-3 border-b border-slate-100 pb-2">
+                              <div className="flex items-center gap-1.5 font-mono text-xs text-slate-500 font-bold">
+                                <span>{lang === 'en' ? `Tran ID: #${b.id.substring(3, 9)}` : `معاملة ID: #${b.id.substring(3, 9)}`}</span>
+                                {b.paymentStatus && (
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold ${
+                                    b.paymentStatus === 'paid' ? 'bg-emerald-550/10 text-emerald-700 border border-emerald-550/20' :
+                                    b.paymentStatus === 'processing_transfer' ? 'bg-indigo-550/10 text-indigo-700 border border-indigo-550/20' :
+                                    'bg-amber-550/10 text-amber-700 border border-amber-550/20'
+                                  }`}>
+                                    {b.paymentStatus === 'paid' && `💳 ${lang === 'en' ? 'Paid' : 'مسددة'} (${b.paymentMethod?.toUpperCase()})`}
+                                    {b.paymentStatus === 'processing_transfer' && `⏳ ${lang === 'en' ? 'Verifying' : 'تحت التدقيق الحسابي'}`}
+                                    {b.paymentStatus === 'unpaid' && `💵 ${lang === 'en' ? 'Cash Pending' : 'سداد نقدي بمقر المكتب'}`}
+                                  </span>
+                                )}
+                              </div>
                               <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
                                 b.status === 'completed' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
                                 b.status === 'processing' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
@@ -2272,6 +2586,681 @@ export default function App() {
           </div>
         )}
 
+        {/* ==================== TAB 2.5: JOBS & ANNOUNCEMENTS BOARD ==================== */}
+        {activeTab === 'jobs' && (
+          <div className="space-y-8 animate-fade-in font-sans" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+            
+            {/* Header Banner */}
+            <div className="relative overflow-hidden bg-slate-950 text-white p-8 rounded-2xl shadow-xl border border-slate-800">
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-600/10 via-slate-900/40 to-slate-950 opacity-90 z-0"></div>
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="bg-amber-500/15 text-amber-500 px-3 py-1 rounded-full text-xs font-black tracking-wider uppercase border border-amber-500/20">
+                      {lang === 'ar' ? 'بوابة الكفاءات والتعاميم' : 'Talent & Announcement Portal'}
+                    </span>
+                    <span className="bg-emerald-500/15 text-emerald-400 px-3 py-1 rounded-full text-xs font-black tracking-wider border border-emerald-500/20">
+                      ● {lang === 'ar' ? 'محدثة اليوم' : 'Updated Today'}
+                    </span>
+                  </div>
+                  <h1 className="text-3xl font-black text-amber-500 tracking-tight">
+                    {lang === 'ar' ? 'الشواغر الإدارية والتعاميم الرسمية' : 'Careers & Official Circulars'}
+                  </h1>
+                  <p className="text-slate-350 text-sm mt-2 max-w-2xl">
+                    {lang === 'ar' 
+                      ? 'المنصة النشطة لتوظيف الكفاءات الوطنية وإعلان التعاميم التشغيلية والعروض الصادرة مباشرة من الهيئة العليا لمكتب سما المملكة.' 
+                      : 'The active platform for recruiting national talents and broadcasting operational circulars and offers directly from Sama Al-Mamlakah Management.'}
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => {
+                      // Navigate client to submit request on home page
+                      setActiveTab('home');
+                      setTimeout(() => {
+                        const formElem = document.getElementById('booking-form-section');
+                        if (formElem) {
+                          formElem.scrollIntoView({ behavior: 'smooth' });
+                        }
+                      }, 120);
+                    }}
+                    className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-5 py-2.5 rounded-xl font-bold text-xs transition-all shadow-md cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                  >
+                    <FolderPlus className="w-4 h-4" />
+                    {lang === 'ar' ? 'طلب معاملة جديدة' : 'Order New Transaction'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Content Layout with sidebar grids */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              
+              {/* Sidebar Panel - Social Media Integration Connections Hub (4 Cols) */}
+              <div className="lg:col-span-4 space-y-6">
+                
+                {/* Community Connection Widget */}
+                <div className="bg-white border border-slate-200 rounded-2xl shadow-md p-5 relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600"></div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2 mb-1.5">
+                    <Share2 className="w-5 h-5 text-amber-600 animate-pulse" />
+                    <span>{lang === 'ar' ? 'شركاؤنا المتصلون وقنواتنا' : 'Connected Channels Hub'}</span>
+                  </h3>
+                  <p className="text-slate-500 text-xs leading-relaxed mb-4">
+                    {lang === 'ar' 
+                      ? 'جميع العروض والتعاميم المعروضة هنا يتم مزامنتها وبثها تلقائياً على قنوات مكتب سما المملكة الرسمية لضمان وصولها للمستفيدين.' 
+                      : 'All circulars and jobs published here are automatically broadcasted across Sama Al-Mamlakah official accounts in real-time.'}
+                  </p>
+
+                  <div className="space-y-3">
+                    {/* Twitter Link */}
+                    {socialTwitter ? (
+                      <a href={socialTwitter} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-all">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-slate-105 text-slate-800 rounded-lg">
+                            <Twitter className="w-4 h-4 text-slate-900" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-slate-800">{lang === 'ar' ? 'منصة X الرسمية للمكتب' : 'Official X Community'}</p>
+                            <span className="text-[10px] text-slate-400 font-mono">@sama_mamlakah</span>
+                          </div>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                      </a>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-100 opacity-60">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-slate-105 text-slate-400 rounded-lg">
+                            <Twitter className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs font-medium text-slate-400">{lang === 'ar' ? 'منصة تويتر غير مهيأة' : 'X platform not set'}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* WhatsApp Community */}
+                    {socialWhatsapp ? (
+                      <a href={socialWhatsapp} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-emerald-100 hover:border-emerald-250 bg-emerald-50/20 hover:bg-emerald-50/50 transition-all">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-emerald-600 text-white rounded-lg">
+                            <MessageSquare className="w-4 h-4" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-emerald-800">{lang === 'ar' ? 'قناة الواتساب التفاعلية والنبضية' : 'Interactive WhatsApp Broadcast'}</p>
+                            <span className="text-[10px] text-emerald-500 font-bold">{lang === 'ar' ? 'انضم للمجتمع الإخباري' : 'Join News Forum'}</span>
+                          </div>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
+                      </a>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-100 opacity-60">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-slate-105 text-slate-400 rounded-lg">
+                            <MessageSquare className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs font-medium text-slate-400">{lang === 'ar' ? 'واتساب غير مهيأ' : 'WhatsApp not set'}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Linkedin */}
+                    {socialLinkedin ? (
+                      <a href={socialLinkedin} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-all">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-blue-700 text-white rounded-lg">
+                            <Linkedin className="w-4 h-4" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-slate-800">{lang === 'ar' ? 'لينكدإن للمسارات المهنية' : 'LinkedIn Careers Portal'}</p>
+                            <span className="text-[10px] text-slate-400">Sama Al-Mamlakah Office</span>
+                          </div>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                      </a>
+                    ) : (
+                      <div className="flex items-center justify-between p-3 rounded-xl border border-dashed border-slate-100 opacity-60">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-slate-105 text-slate-400 rounded-lg">
+                            <Linkedin className="w-4 h-4" />
+                          </div>
+                          <span className="text-xs font-medium text-slate-400">{lang === 'ar' ? 'لينكدإن غير مهيأ' : 'LinkedIn not set'}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Instagram/Facebook details */}
+                    {socialInstagram && (
+                      <a href={socialInstagram} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-slate-200 hover:bg-slate-50 transition-all">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-pink-600 text-white rounded-lg">
+                            <Instagram className="w-4 h-4" />
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs font-bold text-slate-800">{lang === 'ar' ? 'حساب إنستغرام المصور' : 'Instagram Feed'}</p>
+                            <span className="text-[10px] text-slate-400">@SamaMamlakah</span>
+                          </div>
+                        </div>
+                        <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+
+                {/* Info Circular Alert */}
+                <div className="bg-amber-50/50 border border-amber-500/10 rounded-2xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 px-2 text-[10px] bg-amber-500 text-slate-950 rounded-md font-bold">
+                      {lang === 'ar' ? 'موثوقية متبادلة' : 'Verified'}
+                    </div>
+                    <span className="text-xs font-black text-amber-900">{lang === 'ar' ? 'ملاحظة للمهنيين والمتقدمين' : 'Notes for Applicants'}</span>
+                  </div>
+                  <p className="text-xs text-amber-800 leading-relaxed">
+                    {lang === 'ar'
+                      ? 'مكتب سما المملكة مصنف ومصادق من وزارة العمل والهيئات المشغلة لمزودي التأشيرات بالمملكة العربية السعودية لعام ٢٠٢٦. جميع عمليات التقديم للوظائف مجانية بالكامل ولن يطلب منك أي كادر مالي تحت أي ظرف.'
+                      : 'Sama Al-Mamlakah Office is actively verified and certified by the Saudi Ministry of Human Resources for 2026. All application processes are 100% free of charge.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Central Posts Stream Box (8 Cols) */}
+              <div className="lg:col-span-8 space-y-6">
+                
+                {/* Search & Tabs Toolbar */}
+                <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                  
+                  {/* Tabs Selector list */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl w-full md:w-auto">
+                    <button 
+                      onClick={() => setJobsSubTab('all')}
+                      className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-lg transition-all ${jobsSubTab === 'all' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {lang === 'ar' ? '🚀 الكل' : 'All'} ({jobs.length + announcements.length})
+                    </button>
+                    <button 
+                      onClick={() => setJobsSubTab('jobs')}
+                      className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-lg transition-all ${jobsSubTab === 'jobs' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {lang === 'ar' ? '💼 شواغر وظيفية' : 'Job Openings'} ({jobs.length})
+                    </button>
+                    <button 
+                      onClick={() => setJobsSubTab('announcements')}
+                      className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-lg transition-all ${jobsSubTab === 'announcements' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-500 hover:text-slate-800'}`}
+                    >
+                      {lang === 'ar' ? '📢 تعاميم وأخبار' : 'News & Announcements'} ({announcements.length})
+                    </button>
+                  </div>
+
+                  {/* Search filter input */}
+                  <div className="relative w-full md:w-64">
+                    <input 
+                      type="text"
+                      placeholder={lang === 'ar' ? 'ابحث بالوظائف والإعلانات...' : 'Search posts...'}
+                      value={jobsSearchQuery}
+                      onChange={(e) => setJobsSearchQuery(e.target.value)}
+                      className="w-full text-xs border border-slate-250 pr-8 pl-3 py-2 rounded-xl focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    />
+                    <Search className={`w-4 h-4 text-slate-400 absolute top-2.5 ${lang === 'ar' ? 'right-2.5' : 'left-8.5'}`} />
+                  </div>
+                </div>
+
+                {/* Posts Stream rendering */}
+                <div className="space-y-6">
+                  
+                  {/* Filtering data logic */}
+                  {(() => {
+                    // Filtered Jobs
+                    const filteredJobs = jobs.filter(j => {
+                      if (jobsSubTab === 'announcements') return false;
+                      const query = jobsSearchQuery.trim().toLowerCase();
+                      if (!query) return true;
+                      return j.title.toLowerCase().includes(query) || 
+                             j.department.toLowerCase().includes(query) || 
+                             j.description.toLowerCase().includes(query) ||
+                             j.location.toLowerCase().includes(query) ||
+                             j.requirements.some(r => r.toLowerCase().includes(query));
+                    });
+
+                    // Filtered Announcements
+                    const filteredAnnouncements = announcements.filter(a => {
+                      if (jobsSubTab === 'jobs') return false;
+                      const query = jobsSearchQuery.trim().toLowerCase();
+                      if (!query) return true;
+                      return a.title.toLowerCase().includes(query) || 
+                             a.content.toLowerCase().includes(query) ||
+                             a.category.toLowerCase().includes(query);
+                    });
+
+                    // Combined and Sorted Lists
+                    // Let's sort Pinned Announcements first, then sort by date descending
+                    const combinedPostsList: Array<{ type: 'job' | 'announcement'; date: string; isPinned: boolean; data: any }> = [];
+                    
+                    filteredAnnouncements.forEach(a => {
+                      combinedPostsList.push({
+                        type: 'announcement',
+                        date: a.date,
+                        isPinned: !!a.isPinned,
+                        data: a
+                      });
+                    });
+
+                    filteredJobs.forEach(j => {
+                      combinedPostsList.push({
+                        type: 'job',
+                        date: j.date,
+                        isPinned: false, // jobs don't explicitly pin
+                        data: j
+                      });
+                    });
+
+                    // Sort: Pinned first, then date desc
+                    combinedPostsList.sort((a, b) => {
+                      if (a.isPinned && !b.isPinned) return -1;
+                      if (!a.isPinned && b.isPinned) return 1;
+                      return new Date(b.date).getTime() - new Date(a.date).getTime();
+                    });
+
+                    if (combinedPostsList.length === 0) {
+                      return (
+                        <div className="text-center bg-white border border-slate-200 rounded-2xl p-12 text-slate-500 shadow-xs">
+                          <Bell className="w-12 h-12 mx-auto text-slate-300 mb-3 animate-bounce" />
+                          <h4 className="font-bold text-slate-900 text-sm mb-1">{lang === 'ar' ? 'لا توجد نتائج مطابقة لبحثك' : 'No matching updates found'}</h4>
+                          <p className="text-xs">{lang === 'ar' ? 'يرجى مراجعة العبارة المدخلة، أو التبديل لأحد التبويبات الأخرى.' : 'Verify your query or switch categories.'}</p>
+                        </div>
+                      );
+                    }
+
+                    return combinedPostsList.map((post, idx) => {
+                      if (post.type === 'job') {
+                        const j = post.data as Job;
+                        return (
+                          <div key={j.id} className="bg-white border border-slate-200 hover:border-amber-400/40 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all relative group overflow-hidden text-right">
+                            <div className="absolute top-0 left-0 right-0 h-0.5 bg-slate-100 group-hover:bg-amber-400"></div>
+                            
+                            <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3">
+                              <div className="flex items-center gap-2">
+                                <span className="p-1 px-2 text-[10px] bg-amber-50 text-amber-700 border border-amber-250/30 rounded-lg font-bold">
+                                  {lang === 'ar' ? 'حقيبة التوظيف الشاغرة' : 'Job Vacancy'}
+                                </span>
+                                <span className="font-mono text-[10px] text-slate-400">
+                                  {new Date(j.date).toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US')}
+                                </span>
+                              </div>
+                              <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-black ${
+                                j.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                              }`}>
+                                {j.status === 'active' ? (lang === 'ar' ? '● شاغر متاح للتقديم' : 'Active Seat') : (lang === 'ar' ? 'مغلق' : 'Closed')}
+                              </span>
+                            </div>
+
+                            <h3 className="text-lg font-black text-slate-900 group-hover:text-amber-600 transition-colors mb-2 text-right">{j.title}</h3>
+                            <div className="flex flex-wrap gap-2.5 mb-4 font-sans text-xs">
+                              <span className="flex items-center gap-1 bg-slate-50 border border-slate-150 rounded-lg px-2.5 py-1 text-slate-650" title="القسم الداخلي">
+                                <Briefcase className="w-3.5 h-3.5 text-slate-500" />
+                                {j.department}
+                              </span>
+                              <span className="flex items-center gap-1 bg-slate-50 border border-slate-150 rounded-lg px-2.5 py-1 text-slate-650" title="مقر العمل">
+                                <MapPin className="w-3.5 h-3.5 text-slate-500" />
+                                {j.location}
+                              </span>
+                              <span className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/20 text-slate-900 rounded-lg px-2.5 py-1 font-bold" title="طبيعة العمل">
+                                {j.type === 'full-time' && (lang === 'ar' ? 'دوام كامل' : 'Full Time')}
+                                {j.type === 'part-time' && (lang === 'ar' ? 'دوام جزئي' : 'Part Time')}
+                                {j.type === 'contract' && (lang === 'ar' ? 'عقد خارجي' : 'Contract basis')}
+                              </span>
+                              <span className="flex items-center gap-1 bg-emerald-50 border border-emerald-100/55 rounded-lg px-2.5 py-1 text-emerald-850 font-mono text-[11px] font-bold" title="الراتب المتوقع والبدلات">
+                                <Coins className="w-3.5 h-3.5 text-emerald-600" />
+                                {j.salary}
+                              </span>
+                            </div>
+
+                            <p className="text-xs text-slate-550 leading-relaxed mb-4 bg-slate-50/50 p-3 rounded-xl border border-slate-100 text-right">{j.description}</p>
+                            
+                            <div className="space-y-1.5 mb-5 font-sans">
+                              <h4 className="text-[11px] font-black text-slate-800 text-right">{lang === 'ar' ? 'المهارات وبنود القبول المطلوبة:' : 'Job Requirements & Preferred Credentials:'}</h4>
+                              <ul className="list-disc pr-4 space-y-1 text-xs text-slate-550 text-right">
+                                {j.requirements.map((req, rIdx) => (
+                                  <li key={rIdx}>{req}</li>
+                                ))}
+                              </ul>
+                            </div>
+
+                            {/* Job actions with Social Media shares connected! */}
+                            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-slate-100">
+                              <div className="flex items-center gap-2 w-full sm:w-auto">
+                                {j.status === 'active' ? (
+                                  <button 
+                                    onClick={() => {
+                                      setSelectedApplyJob(j);
+                                      setAppApplicantName('');
+                                      setAppApplicantPhone('');
+                                      setAppApplicantEmail('');
+                                      setAppCoverLetter('');
+                                      setAppCvFileName('');
+                                      setAppCvFileData('');
+                                      setAppSubmittedSuccess(false);
+                                    }}
+                                    className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-amber-505 px-5.5 py-2 rounded-xl border border-slate-850 hover:border-slate-750 text-amber-500 hover:text-white px-5.5 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1 text-center"
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-amber-500" />
+                                    <span>{lang === 'ar' ? 'التقديم الإلكتروني السريع' : 'Submit Application Now'}</span>
+                                  </button>
+                                ) : (
+                                  <button disabled className="w-full sm:w-auto bg-slate-100 text-slate-400 px-5.5 py-2 rounded-xl font-bold text-xs cursor-not-allowed">
+                                    {lang === 'ar' ? 'باب التقديم مغلق حالياً' : 'Recruitment Closed'}
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Share Board with live links targeting social media channels! */}
+                              <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0">
+                                <span className="text-[10px] text-slate-400 font-bold flex items-center gap-1">
+                                  <Share2 className="w-3.5 h-3.5" />
+                                  <span>{lang === 'ar' ? `مشاركة (${j.shares || 0}):` : `Share (${j.shares || 0}):`}</span>
+                                </span>
+
+                                {/* WhatsApp Share */}
+                                <a 
+                                  onClick={() => {
+                                    // Increment simulated counter
+                                    setJobs(prev => prev.map(item => item.id === j.id ? { ...item, shares: (item.shares || 0) + 1 } : item));
+                                  }}
+                                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                                    `*شاغر وظيفي في مكتب سما المملكة للتعقيب:*\n\nالمسمى: *${j.title}*\nالقسم: ${j.department}\nالراتب المخصص: ${j.salary}\n\nتفضل بتقديم سيرتك الذاتية الإلكترونية الفورية:\n${window.location.origin}`
+                                  )}`}
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  title="مشاركة عبر واتساب"
+                                  className="p-1 px-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-all flex items-center gap-0.5 border border-emerald-150/30"
+                                >
+                                  <MessageSquare className="w-3.5 h-3.5" />
+                                  <span>واتساب</span>
+                                </a>
+
+                                {/* Twitter/X Share */}
+                                <a 
+                                  onClick={() => {
+                                    // Increment simulated counter
+                                    setJobs(prev => prev.map(item => item.id === j.id ? { ...item, shares: (item.shares || 0) + 1 } : item));
+                                  }}
+                                  href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                                    `مكتب سما المملكة يعلن عن توفر شاغر وظيفي بمسمى [${j.title}] في ${j.location}. بادر بالتقديم الإلكتروني الآن من خلال موقعنا الرسمى:`
+                                  )}&url=${encodeURIComponent(window.location.origin)}`}
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  title="مشاركة عبر منصة X"
+                                  className="p-1 px-2.5 bg-slate-950 text-slate-100 hover:bg-slate-900 rounded-lg text-xs font-bold transition-all flex items-center gap-0.5"
+                                >
+                                  <Twitter className="w-3 h-3 text-white" />
+                                  <span>X</span>
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      } else {
+                        const a = post.data as Announcement;
+                        return (
+                          <div key={a.id} className="bg-white border border-slate-200 hover:border-blue-400/40 rounded-2xl p-5 shadow-xs relative transition-all group overflow-hidden text-right">
+                            
+                            {/* Colorful Left Highlight Indicator */}
+                            <div className={`absolute top-0 bottom-0 ${lang === 'ar' ? 'right-0 w-1.5' : 'left-0 w-1.5'} ${
+                              a.category === 'alert' ? 'bg-red-500' :
+                              a.category === 'offer' ? 'bg-indigo-500' :
+                              a.category === 'news' ? 'bg-blue-500' : 'bg-amber-500'
+                            }`}></div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-2.5 mb-3 px-2">
+                              <div className="flex items-center gap-2">
+                                <span className={`p-1 px-2.5 text-[10px] rounded-lg font-black ${
+                                  a.category === 'alert' ? 'bg-red-50 text-red-700 border border-red-150/30' :
+                                  a.category === 'offer' ? 'bg-indigo-50 text-indigo-700 border border-indigo-150/30' :
+                                  a.category === 'news' ? 'bg-blue-50 text-blue-700 border border-blue-150/30' : 
+                                  'bg-amber-50 text-amber-700 border border-amber-150/30'
+                                }`}>
+                                  {a.category === 'alert' && (lang === 'ar' ? '🚨 تعميم عاجل ونظامي' : 'System Alert')}
+                                  {a.category === 'offer' && (lang === 'ar' ? '🏷️ عروض وباقات جديدة' : 'Exclusive Offer')}
+                                  {a.category === 'news' && (lang === 'ar' ? '📢 أخبار ومستجدات' : 'Corporate News')}
+                                  {a.category === 'holiday' && (lang === 'ar' ? '📅 ساعات العمل والإجازات' : 'Calendar & Holidays')}
+                                </span>
+                                <span className="font-mono text-[10px] text-slate-400">
+                                  {new Date(a.date).toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US')}
+                                </span>
+                              </div>
+
+                              {a.isPinned && (
+                                <span className="bg-amber-500/10 text-amber-700 text-[10px] px-2.5 py-0.5 rounded-full font-black border border-amber-500/20 animate-pulse flex items-center gap-1">
+                                  ★ {lang === 'ar' ? 'مثبت بالإدارة' : 'Pinned Circular'}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="px-2">
+                              <h3 className="text-base font-black text-slate-900 group-hover:text-blue-600 transition-colors mb-2 text-right">{a.title}</h3>
+                              <p className="text-xs text-slate-600 leading-relaxed font-sans font-medium whitespace-pre-wrap text-right">{a.content}</p>
+                            </div>
+
+                            {/* Announcement Shared button */}
+                            <div className="flex justify-end items-center gap-2 pt-3 mt-4 border-t border-slate-100">
+                              <span className="text-[10px] text-slate-400 font-bold">{lang === 'ar' ? 'مشاركة الإعلان:' : 'Share update:'}</span>
+                              
+                              <a 
+                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                                  `*تنويه وتعميم صادر عن مكتب سما المملكة لمراجعة المعاملات:*\n\n*${a.title}*\n\n${a.content}\n\nلمتابعة البوابة المعتمدة:\n${window.location.origin}`
+                                )}`}
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="p-1 px-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-lg text-xs font-bold transition-all flex items-center gap-0.5"
+                              >
+                                <MessageSquare className="w-3 h-3" />
+                                <span>واتساب</span>
+                              </a>
+
+                              <a 
+                                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
+                                  `تعميم معتمد من سما المملكة للخدمات: [${a.title}]`
+                                )}&url=${encodeURIComponent(window.location.origin)}`}
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="p-1 px-2.5 bg-slate-950 text-slate-100 hover:bg-slate-900 rounded-lg text-xs font-bold transition-all flex items-center gap-0.5"
+                              >
+                                <Twitter className="w-3 h-3 text-white" />
+                                <span>تويتر</span>
+                              </a>
+                            </div>
+                          </div>
+                        );
+                      }
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Job Application Modal Dialogue */}
+            {selectedApplyJob && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4" dir="rtl">
+                <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-scale-up border border-slate-200 text-right">
+                  
+                  {/* Modal Header */}
+                  <div className="bg-slate-950 text-white p-5 relative">
+                    <button 
+                      onClick={() => setSelectedApplyJob(null)}
+                      className={`absolute top-4 p-1 rounded-full bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer ${lang === 'ar' ? 'left-4' : 'right-4'}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <span className="text-[10px] bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full font-black mb-1.5 inline-block">
+                      {lang === 'ar' ? 'استمارة طلب توظيف فورية' : 'Electronic HR Application'}
+                    </span>
+                    <h3 className="text-base font-black text-white text-right">{selectedApplyJob.title}</h3>
+                    <p className="text-[11px] text-slate-350 text-right">{selectedApplyJob.department} • {selectedApplyJob.location}</p>
+                  </div>
+
+                  {/* Modal Body */}
+                  <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto font-sans">
+                    
+                    {appSubmittedSuccess ? (
+                      <div className="py-8 text-center space-y-3">
+                        <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto border border-emerald-250/30">
+                          <Check className="w-8 h-8 font-black" />
+                        </div>
+                        <h4 className="font-black text-slate-900 text-base">{lang === 'ar' ? 'تم استلام طلبكم بنجاح ومصداقية' : 'HR Application Submitted'}</h4>
+                        <p className="text-xs text-slate-500 leading-relaxed max-w-sm mx-auto">
+                          {lang === 'ar' 
+                            ? `شكراً لك، تم حفظ طلبك وإرساله لشعبة تقييم الموارد البشرية لمكتب سما المملكة. سيتم التواصل معك قريباً على الجوال ${appApplicantPhone} في حال مطابقة المؤهلات.`
+                            : `Thank you, your application details have been saved for review. We will contact you at ${appApplicantPhone} if selected.`}
+                        </p>
+                        <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl text-[11px] text-slate-550 text-right space-y-1">
+                          <p><strong>اسم المتقدم:</strong> {appApplicantName}</p>
+                          <p><strong>المسمى الوظيفي:</strong> {selectedApplyJob.title}</p>
+                          {appCvFileName && <p><strong>مرفق السيرة الذاتية:</strong> {appCvFileName} (قيد الفحص والدراسة)</p>}
+                        </div>
+                        <button 
+                          onClick={() => setSelectedApplyJob(null)}
+                          className="mt-6 bg-slate-950 hover:bg-slate-800 text-amber-500 px-5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                        >
+                          {lang === 'ar' ? 'موافق وإغلاق النافذة' : 'Got it'}
+                        </button>
+                      </div>
+                    ) : (
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!appApplicantName.trim() || !appApplicantPhone.trim()) {
+                            alert(lang === 'ar' ? 'يرجى ملء الحقول الإلزامية الاسم والهاتف لحفظ طلبك.' : 'Name and telephone are required.');
+                            return;
+                          }
+
+                          // Create application object
+                          const newApp: JobApplication = {
+                            id: `app-${Date.now()}`,
+                            jobId: selectedApplyJob.id,
+                            jobTitle: selectedApplyJob.title,
+                            applicantName: appApplicantName.trim(),
+                            applicantPhone: appApplicantPhone.trim(),
+                            applicantEmail: appApplicantEmail.trim() || undefined,
+                            coverLetter: appCoverLetter.trim() || undefined,
+                            cvFileName: appCvFileName || undefined,
+                            cvFileData: appCvFileData || undefined,
+                            date: new Date().toISOString(),
+                            status: 'pending'
+                          };
+
+                          setJobApplications(prev => [newApp, ...prev]);
+                          setAppSubmittedSuccess(true);
+                        }}
+                        className="space-y-4 text-right"
+                      >
+                        {/* Name */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">اسم المتقدم بالكامل (الرباعي) <span className="text-rose-600">*</span></label>
+                          <input 
+                            type="text" 
+                            required
+                            placeholder="مثال: صالح عبد الرحمن الماجد"
+                            value={appApplicantName}
+                            onChange={(e) => setAppApplicantName(e.target.value)}
+                            className="w-full text-xs border border-slate-250 rounded-xl p-2.5 focus:outline-hidden focus:border-amber-500 text-right"
+                          />
+                        </div>
+
+                        {/* Phone */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">رقم الهاتف الجوال الفعال <span className="text-rose-600">*</span></label>
+                          <input 
+                            type="tel" 
+                            required
+                            placeholder="05xxxxxxx"
+                            value={appApplicantPhone}
+                            onChange={(e) => setAppApplicantPhone(e.target.value)}
+                            className="w-full text-xs font-mono border border-slate-250 rounded-xl p-2.5 text-right focus:outline-hidden focus:border-amber-500"
+                          />
+                        </div>
+
+                        {/* Email */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">البريد الإلكتروني للردود (اختياري)</label>
+                          <input 
+                            type="email" 
+                            placeholder="yourname@domain.com"
+                            value={appApplicantEmail}
+                            onChange={(e) => setAppApplicantEmail(e.target.value)}
+                            className="w-full text-xs font-mono border border-slate-250 rounded-xl p-2.5 text-right focus:outline-hidden focus:border-amber-500"
+                          />
+                        </div>
+
+                        {/* Cover letter */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">لماذا تجد نفسك مناسباً لهذه الفرصة؟ (ملاحظات إضافية)</label>
+                          <textarea 
+                            rows={3}
+                            placeholder="تحدث بإيجاز عن خبراتك الوظيفية السابقة وشغفك للعمل معنا..."
+                            value={appCoverLetter}
+                            onChange={(e) => setAppCoverLetter(e.target.value)}
+                            className="w-full text-xs border border-slate-250 rounded-xl p-2.5 focus:outline-hidden focus:border-amber-500 text-right"
+                          />
+                        </div>
+
+                        {/* File CV Upload */}
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">أرفق السيرة الذاتية (PDF, Word أو صورة)</label>
+                          
+                          <div className="relative border-2 border-dashed border-slate-200 hover:border-amber-400 bg-slate-50/50 hover:bg-amber-500/5 p-4 rounded-xl text-center select-none transition-all">
+                            <input 
+                              type="file" 
+                              accept=".pdf,.doc,.docx,image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                
+                                const reader = new FileReader();
+                                reader.onload = (event) => {
+                                  setAppCvFileName(file.name);
+                                  setAppCvFileData(event.target?.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }}
+                              className="absolute inset-0 opacity-0 cursor-pointer"
+                            />
+                            <div className="space-y-1 text-center">
+                              <Paperclip className="w-5 h-5 mx-auto text-slate-400 animate-pulse" />
+                              <p className="text-[11px] font-medium text-slate-550">
+                                {appCvFileName ? (
+                                  <span className="text-emerald-700 font-bold">✓ المرفق: {appCvFileName}</span>
+                                ) : (
+                                  <span>اسحب وأفلت ملف سيرتك هنا، أو انقر للتصفح</span>
+                                )}
+                              </p>
+                              <p className="text-[9px] text-slate-400 font-mono">PDF, DOCX, PNG (Max 5MB)</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Buttons */}
+                        <div className="flex justify-end gap-2.5 pt-4 border-t border-slate-100">
+                          <button 
+                            type="button"
+                            onClick={() => setSelectedApplyJob(null)}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-755 px-4 py-2 rounded-xl text-xs font-bold transition-all"
+                          >
+                            إلغاء
+                          </button>
+                          <button 
+                            type="submit"
+                            className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-6 py-2 rounded-xl text-xs font-black transition-all shadow-md cursor-pointer"
+                          >
+                            تأكيد تقديم طلب التوظيف
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ==================== TAB 3: ADMIN & OPERATIONS CONTROL PANEL ==================== */}
         {activeTab === 'admin' && isAdminAuthenticated && (
           <div className="space-y-8 animate-fade-in">
@@ -2320,12 +3309,236 @@ export default function App() {
                 >
                   💬 إشعارات واتساب الفورية {whatsappLogs.length > 0 && `(${whatsappLogs.length})`}
                 </button>
+                <button
+                  onClick={() => setAdminTab('jobs')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all whitespace-nowrap bg-amber-950/20 text-amber-500 border border-amber-500/20 hover:bg-amber-900/40 ${
+                    adminTab === 'jobs' ? 'bg-amber-500 text-slate-950 border-amber-500' : ''
+                  }`}
+                >
+                  💼 إدارة الوظائف والإعلانات والطلبات ({jobApplications.filter(a => a.status === 'pending').length})
+                </button>
               </div>
             </div>
 
             {/* --- ADMIN INTERNAL VIEW 1: STATS & SUMMARY --- */}
             {adminTab === 'stats' && (
               <div className="space-y-8">
+                {/* HIGH-LEVEL OPERATIONAL DASHBOARD SUMMARY - DIRECTLY REQUESTED FEATURES */}
+                <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl border border-slate-800 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                  <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                  
+                  <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-5 mb-6 gap-4">
+                    <div>
+                      <h2 className="text-lg font-black text-amber-500 flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 animate-pulse text-amber-500" />
+                        <span>لوحة الملخص التشغيلي للأداء الفوري والمعاملات اليومية</span>
+                      </h2>
+                      <p className="text-slate-400 text-xs mt-1 font-sans">
+                        مؤشرات حيوية تفاعلية تلخص التدفق المالي لليوم، ونسبة كفاءة التعقيب والطلبات، والكوادر البشرية المنضمة حديثاً لمكتب سما المملكة.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-3 py-1.5 bg-slate-950/80 border border-slate-800 text-slate-350 text-xs font-mono font-bold rounded-xl flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                        <span>اليوم: {todayDateStr}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    
+                    {/* CARD 1: TOTAL DAILY REVENUE AS REQUESTED */}
+                    <div className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pointer-events-none">
+                          <span className="text-slate-400 text-xs font-bold block">إيرادات وحركة اليوم المالية</span>
+                          <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg">
+                            <Coins className="w-4 h-4" />
+                          </div>
+                        </div>
+                        
+                        <div className="mt-3">
+                          <span className="text-slate-400 text-[10px] block font-sans">صافي أتعاب المكتب لليوم ({todayTransactions.length} فواتير تامة)</span>
+                          <strong className="text-3xl font-black text-amber-500 block font-mono tracking-tight mt-1">
+                            {todayOfficeRevenue.toFixed(2)} ر.س
+                          </strong>
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-slate-900 space-y-2 text-[11px] font-sans">
+                          <div className="flex justify-between text-slate-300">
+                            <span>أمانات الدولة المحصلة اليوم:</span>
+                            <span className="font-mono text-slate-200">{todayGovSpent.toFixed(2)} ر.س</span>
+                          </div>
+                          <div className="flex justify-between text-slate-300">
+                            <span>ضريبة القيمة المضافة لليوم (15%):</span>
+                            <span className="font-mono text-slate-200">{todayVATCollected.toFixed(2)} ر.س</span>
+                          </div>
+                          <div className="flex justify-between border-t border-slate-900/60 pt-2 font-bold text-amber-400">
+                            <span>إجمالي حجم التداول اليومي:</span>
+                            <span className="font-mono">{todayOverallAccountingVolume.toFixed(2)} ر.س</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5">
+                        <button
+                          onClick={handleSimulateDailyTransaction}
+                          className="w-full py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 hover:text-white rounded-xl text-xs font-extrabold transition-all duration-300 shadow-lg shadow-amber-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>توليد قيد معاملة لليوم لرؤية التحديث</span>
+                        </button>
+                        <span className="text-[9px] text-slate-500 block text-center mt-1.5 font-sans">
+                          * زر ذكي لمحاكاة استلام عملية جديدة وزيادة تدفقات الخزينة بالوقت الفعلي للتقييم.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* CARD 2: PENDING VS COMPLETED REQUESTS RATIO AS REQUESTED */}
+                    <div className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pointer-events-none">
+                          <span className="text-slate-400 text-xs font-bold block">معدل ونسبة إنجاز الطابور</span>
+                          <div className="p-2 bg-blue-500/10 text-blue-400 rounded-lg">
+                            <Activity className="w-4 h-4" />
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex items-baseline gap-2">
+                          <strong className="text-3xl font-black text-blue-400 font-mono tracking-tight">
+                            {completedToPendingRatio}:1
+                          </strong>
+                          <span className="text-[10px] text-slate-450 text-slate-400 font-sans">
+                            نسبة المكتملة إلى المعلقة (Ratio)
+                          </span>
+                        </div>
+
+                        <p className="text-[10px] text-slate-450 mt-1 font-sans text-slate-300">
+                          {pendingRequestsCount > 0 
+                            ? `كل معلقة تقابلها ${completedToPendingRatio} معاملة مكتملة في الأنظمة.` 
+                            : 'جميع المعاملات الصادرة تم إنهاؤها واعتمادها بشكل كامل ولا تتوفر طلبات معلقة.'}
+                        </p>
+
+                        <div className="mt-4 pt-4 border-t border-slate-900 space-y-3 font-sans text-[11px]">
+                          <div className="flex justify-between items-center text-slate-350">
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                              <span>المعاملات المنجزة تماماً:</span>
+                            </span>
+                            <span className="font-mono font-bold text-slate-200">{completedRequestsCount} طلب مكتمل</span>
+                          </div>
+                          
+                          <div className="flex justify-between items-center text-slate-350">
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                              <span>المعاملات المعلقة (قيد المراجعة):</span>
+                            </span>
+                            <span className="font-mono font-bold text-amber-400">{pendingRequestsCount} طلب وافد</span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-slate-350">
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                              <span>تحت التعقيب الحكومي النشط:</span>
+                            </span>
+                            <span className="font-mono font-bold text-blue-400">{processingRequestsCount} تحت المعالجة</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 space-y-2">
+                        <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden flex">
+                          <div 
+                            style={{ width: `${bookings.length > 0 ? (completedRequestsCount / bookings.length) * 100 : 0}%` }} 
+                            className="bg-emerald-500 h-full"
+                          ></div>
+                          <div 
+                            style={{ width: `${bookings.length > 0 ? (processingRequestsCount / bookings.length) * 100 : 0}%` }} 
+                            className="bg-blue-500 h-full"
+                          ></div>
+                          <div 
+                            style={{ width: `${bookings.length > 0 ? (pendingRequestsCount / bookings.length) * 100 : 0}%` }} 
+                            className="bg-amber-500 h-full"
+                          ></div>
+                          <div 
+                            style={{ width: `${bookings.length > 0 ? (cancelledRequestsCount / bookings.length) * 100 : 0}%` }} 
+                            className="bg-red-500 h-full"
+                          ></div>
+                        </div>
+                        <div className="flex justify-between text-[9px] text-slate-500 font-sans">
+                          <span>منجر ({completedRequestsCount})</span>
+                          <span>ميداني ({processingRequestsCount})</span>
+                          <span>معلق ({pendingRequestsCount})</span>
+                          <span>إجمالي: {bookings.length}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* CARD 3: RECENTLY JOINED APPLICANTS AS REQUESTED */}
+                    <div className="bg-slate-950/60 p-5 rounded-xl border border-slate-800 flex flex-col justify-between">
+                      <div>
+                        <div className="flex items-center justify-between pointer-events-none">
+                          <span className="text-slate-400 text-xs font-bold block">السير الذاتية والطلبات المستلمة</span>
+                          <div className="p-2 bg-pink-500/10 text-pink-400 rounded-lg">
+                            <Briefcase className="w-4 h-4" />
+                          </div>
+                        </div>
+
+                        <div className="mt-3">
+                          <span className="text-slate-400 text-[10px] block font-sans">أحدث الكوادر المستهدفة للتوظيف وتحديث الموارد البشرية</span>
+                          <span className="text-lg font-black text-slate-100 block font-sans mt-0.5">
+                            المتقدمون ({jobApplications.length} متقدمين)
+                          </span>
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                          {recentJobApplications.length === 0 ? (
+                            <p className="text-slate-500 text-[11px] italic text-center py-6">لا يتوفر متقدمون حالياً.</p>
+                          ) : (
+                            recentJobApplications.map(app => (
+                              <div key={app.id} className="p-2 bg-slate-900 border border-slate-800 rounded-lg flex items-center justify-between text-[11px] hover:border-slate-700 transition-all">
+                                <div className="truncate pl-2">
+                                  <span className="font-bold text-slate-100 block truncate">{app.applicantName}</span>
+                                  <span className="text-[9px] text-amber-500 block truncate">{app.jobTitle}</span>
+                                </div>
+                                <div className="text-left flex-shrink-0">
+                                  <span className="inline-block px-1.5 py-0.5 bg-slate-950 text-[9px] text-slate-400 rounded font-mono">
+                                    {app.date.includes('T') ? app.date.split('T')[1].substring(0, 5) : app.date}
+                                  </span>
+                                  <span className={`block text-[8px] font-bold text-center mt-0.5 ${
+                                    app.status === 'pending' ? 'text-amber-400 animate-pulse' : 'text-emerald-400'
+                                  }`}>
+                                    {app.status === 'pending' ? 'جديد ⏳' : 'مراجعة'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <button
+                          onClick={() => {
+                            setAdminTab('jobs');
+                          }}
+                          className="w-full py-2 bg-slate-950 hover:bg-slate-905 border border-slate-800 text-amber-500 hover:text-amber-400 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span>إدارة وفرز طلبات التوظيف بالكامل</span>
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* Divider / Separator */}
+                <div className="border-t border-slate-200/50 pt-4">
+                  <h3 className="text-xs font-black text-slate-500 tracking-wider uppercase mb-1">المؤشرات المالية التحليلية المتكاملة والتقارير</h3>
+                </div>
+
                 {/* Stats grid */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                   
@@ -2570,7 +3783,22 @@ export default function App() {
                             <tr key={b.id} className="hover:bg-slate-50 transition-colors">
                               <td className="p-4">
                                 <strong className="text-slate-900 block text-sm font-sans">{b.clientName}</strong>
-                                <span className="text-slate-500 font-mono tracking-wide">{b.phoneNumber}</span>
+                                <div className="flex flex-wrap gap-1.5 items-center mt-0.5">
+                                  <span className="text-slate-500 font-mono text-[11px] tracking-wide">{b.phoneNumber}</span>
+                                  {b.paymentStatus ? (
+                                    <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
+                                      b.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' :
+                                      b.paymentStatus === 'processing_transfer' ? 'bg-indigo-100 text-indigo-805' :
+                                      'bg-amber-100 text-amber-850'
+                                    }`}>
+                                      {b.paymentStatus === 'paid' && `💳 مسددة (${b.paymentMethod?.toUpperCase()})`}
+                                      {b.paymentStatus === 'processing_transfer' && `⏳ بانتظار مراجعة التحويل`}
+                                      {b.paymentStatus === 'unpaid' && `💵 دفع نقدي بالمنشأة`}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] bg-slate-100 text-slate-650 px-1.5 py-0.2 rounded font-bold">💵 سداد غير محدد</span>
+                                  )}
+                                </div>
                                 {b.notes && (
                                   <p className="text-[11px] text-slate-500 mt-1 max-w-sm font-sans line-clamp-2" title={b.notes}>
                                     <strong>ملاحظات:</strong> {b.notes}
@@ -2658,7 +3886,36 @@ export default function App() {
                                   <option value="cancelled">ملغية ومسحوبة</option>
                                 </select>
                               </td>
-                              <td className="p-4 text-left space-x-reverse space-x-1.5">
+                              <td className="p-4 text-left space-x-reverse space-x-1.5 flex flex-wrap gap-1 items-center justify-end">
+                                {b.paymentStatus === 'processing_transfer' && (
+                                  <button
+                                    onClick={() => {
+                                      const updatedBookings = bookings.map(item => {
+                                        if (item.id === b.id) {
+                                          return { ...item, paymentStatus: 'paid' as const };
+                                        }
+                                        return item;
+                                      });
+                                      setBookings(updatedBookings);
+                                      
+                                      const updatedTxs = transactions.map(t => {
+                                        if (t.clientName.trim() === b.clientName.trim() && t.serviceName.trim() === b.serviceName.trim()) {
+                                          return {
+                                            ...t,
+                                            notes: t.notes.replace('حوالة بنكية معلقة للدراسة والتدقيق المصرفي', 'مدفوعة بالكامل ومعتمدة بموجب تدقيق الإدارة')
+                                          };
+                                        }
+                                        return t;
+                                      });
+                                      setTransactions(updatedTxs);
+                                      alert('✅ تم اعتماد التحويل البنكي وتأكيد السداد في سجلات الحسابات الفورية!');
+                                    }}
+                                    className="bg-indigo-650 hover:bg-indigo-700 text-white px-2 py-1.5 rounded font-extrabold text-[11px] whitespace-nowrap transition-colors shadow-3xs"
+                                    title="اعتماد الحوالة البنكية وتصفية الديون"
+                                  >
+                                    ✔ اعتماد التحويل
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => handlePreFillTransactionFromBooking(b)}
                                   className="bg-slate-950 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded font-black text-[11px] transition-colors"
@@ -5074,7 +6331,700 @@ export default function App() {
 
               </div>
             )}
-            
+
+            {/* --- ADMIN INTERNAL VIEW 6: JOBS & ANNOUNCEMENTS CONTROL --- */}
+            {adminTab === 'jobs' && (
+              <div className="space-y-8 animate-fade-in font-sans" dir="rtl">
+                
+                {/* Admin Jobs Header */}
+                <div className="bg-white p-6 rounded-xl shadow-xs border border-slate-200 text-right">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-950 flex items-center gap-2">
+                        <Briefcase className="w-6 h-6 text-amber-600" />
+                        <span>لوحة إدارة الكوادر البشرية والإعلانات والتعاميم</span>
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        إدارة مباشرة للشواغر الوظيفية، تعيين تعاميم الإدارة لمكتب سما المملكة، ومراجعة السير الذاتية المرفقة من قبل المتقدمين ماليًا ومهنيًا.
+                      </p>
+                    </div>
+                    
+                    {/* Sub-tab selection inside HR panel */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl">
+                      <button 
+                        type="button"
+                        onClick={() => setAdminJobSubTab('applications')}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminJobSubTab === 'applications' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        📂 طلبات التوظيف ({jobApplications.length})
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setAdminJobSubTab('jobs')}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminJobSubTab === 'jobs' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        💼 الشواغر الوظيفية ({jobs.length})
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setAdminJobSubTab('announcements')}
+                        className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${adminJobSubTab === 'announcements' ? 'bg-white text-slate-950 shadow-xs' : 'text-slate-500 hover:text-slate-850'}`}
+                      >
+                        📢 التعاميم والأخبار ({announcements.length})
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SUB-VIEW 1: APPLICATIONS */}
+                {adminJobSubTab === 'applications' && (
+                  <div className="bg-white rounded-xl shadow border border-slate-200 p-6 space-y-6">
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3 text-right">
+                      <h4 className="font-extrabold text-slate-900 text-sm">{lang === 'ar' ? 'السير الذاتية والطلبات الواردة' : 'Submitted Job Applications'}</h4>
+                      <span className="text-xs font-bold text-slate-400 font-mono">Total: {jobApplications.length} entries</span>
+                    </div>
+
+                    {jobApplications.length === 0 ? (
+                      <div className="p-12 text-center text-slate-400 border-2 border-dashed border-slate-150 rounded-xl bg-slate-50">
+                        <Users className="w-12 h-12 mx-auto text-slate-350 mb-3" />
+                        <h5 className="font-bold text-slate-800 text-sm mb-1">لا توجد طلبات توظيف مقدمة حالياً</h5>
+                        <p className="text-xs">بمجرد تقديم سير ذاتية جديدة عبر صفحة الوظائف العامة، ستظهر بيانات وتفاصيل المتقدمين فورياً في هذه القائمة.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                        <table className="w-full text-right text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                              <th className="p-3 text-right">المتقدم للوظيفة</th>
+                              <th className="p-3 text-right">الوظيفة المستهدفة</th>
+                              <th className="p-3 text-right">بيانات الاتصال والبريد</th>
+                              <th className="p-3 text-right">تاريخ التقديم</th>
+                              <th className="p-3 text-center">حالة الطلب</th>
+                              <th className="p-3 text-center">الإجراءات</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-150">
+                            {jobApplications.map((app) => (
+                              <tr key={app.id} className="hover:bg-slate-50/50 transition-all">
+                                <td className="p-3 font-sans text-right">
+                                  <div className="font-black text-slate-900">{app.applicantName}</div>
+                                  {app.cvFileName && (
+                                    <span className="text-[10px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 inline-block mt-1 font-bold border border-amber-200">
+                                      📎 CV: {app.cvFileName}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right">
+                                  <div className="font-bold text-slate-850">{app.jobTitle}</div>
+                                  <span className="text-[10px] text-slate-400 font-mono">ID: {app.jobId}</span>
+                                </td>
+                                <td className="p-3 font-mono text-right">
+                                  <div className="text-slate-700">{app.applicantPhone}</div>
+                                  <div className="text-[10px] text-slate-400">{app.applicantEmail || 'لا يوجد بريد'}</div>
+                                </td>
+                                <td className="p-3 font-mono text-slate-500 text-right">{new Date(app.date).toLocaleDateString('ar-SA')}</td>
+                                <td className="p-3 text-center">
+                                  <span className={`inline-block text-[10px] px-2.5 py-0.5 rounded-full font-black ${
+                                    app.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-205' :
+                                    app.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-250' :
+                                    'bg-slate-100 text-slate-500'
+                                  }`}>
+                                    {app.status === 'pending' && (lang === 'ar' ? 'قيد المراجعة' : 'Pending')}
+                                    {app.status === 'approved' && (lang === 'ar' ? 'مقبول مبدئياً' : 'Shortlisted')}
+                                    {app.status === 'rejected' && (lang === 'ar' ? 'مستبعد' : 'Disqualified')}
+                                  </span>
+                                </td>
+                                <td className="p-3 text-center">
+                                  <div className="flex justify-center items-center gap-1.5">
+                                    
+                                    {/* Status approval toggling buttons */}
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        setJobApplications(prev => prev.map(item => item.id === app.id ? { ...item, status: 'approved' } : item));
+                                      }}
+                                      className="px-2 py-1 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 rounded text-[10px] font-bold transition-all border border-emerald-200 cursor-pointer"
+                                      title="قبول الطلب مبدئياً"
+                                    >
+                                      قبول
+                                    </button>
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        setJobApplications(prev => prev.map(item => item.id === app.id ? { ...item, status: 'rejected' } : item));
+                                      }}
+                                      className="px-2 py-1 bg-red-50 text-red-800 hover:bg-red-100 rounded text-[10px] font-bold transition-all border border-red-200 cursor-pointer"
+                                      title="استبعاد الطلب"
+                                    >
+                                      استبعاد
+                                    </button>
+
+                                    {/* View Cover letter Details */}
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        let msg = `تفاصيل طلب التوظيف للمتقدم: ${app.applicantName}\n\n`;
+                                        msg += `البريد الإلكتروني: ${app.applicantEmail || 'لا يوجد'}\n`;
+                                        msg += `رقم الهاتف: ${app.applicantPhone}\n`;
+                                        msg += `خطاب التغطية والمؤهلات:\n"${app.coverLetter || 'لم يكتب خطاباً مخصصاً.'}"\n\n`;
+                                        if (app.cvFileData) {
+                                          msg += `تنبيه: السيرة الذاتية مرفقة وقابلة للتنزيل فورياً.`;
+                                        }
+                                        alert(msg);
+                                      }}
+                                      className="p-1 text-slate-650 hover:bg-slate-100 rounded border border-slate-200 transition-all cursor-pointer"
+                                      title="عرض التفاصيل"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Download file CV base64 code */}
+                                    {app.cvFileData && (
+                                      <a 
+                                        href={app.cvFileData} 
+                                        download={app.cvFileName || "cv.pdf"}
+                                        className="p-1 text-slate-650 hover:bg-amber-50 hover:text-amber-700 rounded border border-slate-200 transition-all"
+                                        title="تحميل السيرة الذاتية المرفقة"
+                                      >
+                                        <Download className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
+
+                                    {/* Delete Request Button */}
+                                    <button 
+                                      type="button"
+                                      onClick={() => {
+                                        if (window.confirm('هل أنت متأكد من حذف هذا السجل نهائياً؟')) {
+                                          setJobApplications(prev => prev.filter(item => item.id !== app.id));
+                                        }
+                                      }}
+                                      className="p-1 text-red-650 hover:bg-red-50 hover:text-red-700 rounded border border-red-150 transition-all cursor-pointer"
+                                      title="حذف الطلب نهائياً"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SUB-VIEW 2: JOBS MANAGEMENT */}
+                {adminJobSubTab === 'jobs' && (
+                  <div className="bg-white rounded-xl shadow border border-slate-200 p-6 space-y-6">
+                    
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3 text-right">
+                      <h4 className="font-extrabold text-slate-900 text-sm">إدارة شواغر التوظيف المفتوحة بالمكتب</h4>
+                      
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          if (adminEditingJob) {
+                            setAdminEditingJob(null);
+                          } else {
+                            setAdminEditingJob({
+                              id: `job-${Date.now()}`,
+                              title: '',
+                              department: 'شعبة العلاقات العامة والتعقيب',
+                              location: 'الرياض - المقر الرئيسي',
+                              type: 'full-time',
+                              salary: '5,000 - 7,500 ر.س',
+                              description: '',
+                              requirements: [],
+                              date: new Date().toISOString().split('T')[0],
+                              status: 'active'
+                            });
+                            // Initialize fields
+                            setAdminJobTitle('');
+                            setAdminJobDepartment('شعبة العلاقات العامة والتعقيب');
+                            setAdminJobLocation('الرياض - المقر الرئيسي');
+                            setAdminJobType('full-time');
+                            setAdminJobSalary('5,000 - 7,500 ر.س');
+                            setAdminJobDescription('');
+                            setAdminJobRequirements('');
+                          }
+                        }}
+                        className="px-3.5 py-1.5 bg-slate-900 text-amber-500 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        {adminEditingJob ? 'إلغاء النموذج والعودة' : '+ إضافة وظيفة شاغرة جديدة'}
+                      </button>
+                    </div>
+
+                    {adminEditingJob ? (
+                      /* Form content */
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!adminJobTitle.trim() || !adminJobDescription.trim()) {
+                            alert('يرجى كتابة المسمى والوصف لحفظ التغييرات.');
+                            return;
+                          }
+
+                          const reqsArray = adminJobRequirements
+                            .split('\n')
+                            .map(r => r.trim())
+                            .filter(Boolean);
+
+                          const updatedJobObj: Job = {
+                            ...adminEditingJob,
+                            title: adminJobTitle.trim(),
+                            department: adminJobDepartment,
+                            location: adminJobLocation,
+                            type: adminJobType,
+                            salary: adminJobSalary.trim(),
+                            description: adminJobDescription.trim(),
+                            requirements: reqsArray.length > 0 ? reqsArray : ['مؤهل علمي وبدني مناسب لمهمات المراجعة للوزارات بالمملكة']
+                          };
+
+                          setJobs(prev => {
+                            if (prev.some(item => item.id === updatedJobObj.id)) {
+                              return prev.map(item => item.id === updatedJobObj.id ? updatedJobObj : item);
+                            } else {
+                              return [updatedJobObj, ...prev];
+                            }
+                          });
+
+                          setAdminEditingJob(null);
+                        }}
+                        className="space-y-4 max-w-2xl bg-slate-50 p-5 rounded-xl border border-slate-150 text-right"
+                      >
+                        <h4 className="font-extrabold text-slate-800 text-xs text-amber-600">
+                          {adminEditingJob.title ? `تعديل الشاغر: ${adminEditingJob.title}` : 'المواصفات المهنية للشاغر الجديد'}
+                        </h4>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">المسمى الوظيفي المقترح <span className="text-rose-600">*</span></label>
+                            <input 
+                              type="text" 
+                              required
+                              placeholder="مثال: أخصائي تعقيب وتخليص ميداني"
+                              value={adminJobTitle}
+                              onChange={(e) => setAdminJobTitle(e.target.value)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">القسم والشعبة الإدارية</label>
+                            <select 
+                              value={adminJobDepartment}
+                              onChange={(e) => setAdminJobDepartment(e.target.value)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500"
+                            >
+                              <option value="شعبة العلاقات العامة والتعقيب">شعبة العلاقات العامة والتعقيب</option>
+                              <option value="قسم تطوير الأعمال والتقنيات">قسم تطوير الأعمال والتقنيات</option>
+                              <option value="إدارة العمليات والخدمات الحكومية">إدارة العمليات والخدمات الحكومية</option>
+                              <option value="شؤون الموظفين وهيئة المتابعة الكلية">شؤون الموظفين وهيئة المتابعة الكلية</option>
+                              <option value="المحاسبة والإحصاء المالي العام">المحاسبة والإحصاء المالي العام</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">الراتب المتوقع والبدلات</label>
+                            <input 
+                              type="text" 
+                              placeholder="5,000 - 7,500 ر.س"
+                              value={adminJobSalary}
+                              onChange={(e) => setAdminJobSalary(e.target.value)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">موقع العمل المخصص</label>
+                            <input 
+                              type="text" 
+                              placeholder="الرياض - المقر الرئيسي"
+                              value={adminJobLocation}
+                              onChange={(e) => setAdminJobLocation(e.target.value)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">طبيعة العقد والدوام</label>
+                            <select 
+                              value={adminJobType}
+                              onChange={(e) => setAdminJobType(e.target.value as any)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500"
+                            >
+                              <option value="full-time">دوام كامل (Full Time)</option>
+                              <option value="part-time">دوام جزئي (Part Time)</option>
+                              <option value="contract">عقد خارجي مؤقت (Contract)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">وصف العمل الرئيسي والواجبات <span className="text-rose-600">*</span></label>
+                          <textarea 
+                            rows={3}
+                            required
+                            placeholder="تحدث بالتفصيل عن واجبات ومسؤوليات الموظف المقترح في مكتب سما المملكة..."
+                            value={adminJobDescription}
+                            onChange={(e) => setAdminJobDescription(e.target.value)}
+                            className="w-full text-xs border border-slate-2.5 border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right leading-relaxed"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">المهارات والخبرات المطلوبة للقبول (اكتب كل بند في سطر مستقل)</label>
+                          <textarea 
+                            rows={4}
+                            placeholder="مثال:
+إتقان استخدام بوابة جدارة وأبشر أعمال ومقيم
+خبرة لا تقل عن سنتين في تعقيب المكاتب والهيئات الحكومية
+امتلاك سيارة ورخصة قيادة سارية المفعول بالمملكة"
+                            value={adminJobRequirements}
+                            onChange={(e) => setAdminJobRequirements(e.target.value)}
+                            className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right font-sans"
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button 
+                            type="button"
+                            onClick={() => setAdminEditingJob(null)}
+                            className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                          <button 
+                            type="submit"
+                            className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-6 py-2 rounded-xl text-xs font-black transition-all shadow-md cursor-pointer"
+                          >
+                            حفظ الشاغر الوظيفي وبثه للمستفيدين
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      /* Vacancies listing table */
+                      <div className="space-y-4">
+                        {jobs.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 border border-dashed rounded-xl">
+                            لا توجد شواغر معلنة حالياً. انقل للتبويب بالأعلى لإضافة واحدة.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                            <table className="w-full text-right text-xs">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                                  <th className="p-3">المسمى الوظيفي الشاغر</th>
+                                  <th className="p-3">القسم</th>
+                                  <th className="p-3">الموقع / الدوام</th>
+                                  <th className="p-3">الراتب المخصص</th>
+                                  <th className="p-3 text-center">حالة التقديم</th>
+                                  <th className="p-3 text-center">الإجراءات</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-150">
+                                {jobs.map((j) => (
+                                  <tr key={j.id} className="hover:bg-slate-50/50">
+                                    <td className="p-3 font-black text-slate-900 text-right">{j.title}</td>
+                                    <td className="p-3 text-slate-600 text-right">{j.department}</td>
+                                    <td className="p-3 text-right">
+                                      <span className="font-medium text-slate-800">{j.location}</span>
+                                      <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-block mr-1.5">
+                                        {j.type === 'full-time' ? 'دوام كامل' : j.type === 'part-time' ? 'دوام جزئي' : 'عقد'}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 font-mono text-slate-800 text-right">{j.salary}</td>
+                                    <td className="p-3 text-center">
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          const nextStatus = j.status === 'active' ? 'closed' : 'active';
+                                          setJobs(prev => prev.map(item => item.id === j.id ? { ...item, status: nextStatus } : item));
+                                        }}
+                                        className={`inline-block text-[10px] px-2 py-0.5 rounded font-bold cursor-pointer transition-all ${
+                                          j.status === 'active' ? 'bg-emerald-50 text-emerald-800 border border-emerald-250/20' : 'bg-rose-50 text-rose-800 border border-rose-250/20'
+                                        }`}
+                                        title="انقر للتبديل السريع لحالة شاغر العمل"
+                                      >
+                                        {j.status === 'active' ? '● شاغر نشط ومفتوح' : 'مغلق مؤقتاً'}
+                                      </button>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className="flex justify-center items-center gap-1">
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setAdminEditingJob(j);
+                                            setAdminJobTitle(j.title);
+                                            setAdminJobDepartment(j.department);
+                                            setAdminJobLocation(j.location);
+                                            setAdminJobType(j.type);
+                                            setAdminJobSalary(j.salary);
+                                            setAdminJobDescription(j.description);
+                                            setAdminJobRequirements(j.requirements.join('\n'));
+                                          }}
+                                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold transition-all border border-slate-200 cursor-pointer"
+                                        >
+                                          تعديل
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            if (window.confirm('هل أنت متأكد من مسح هذه الوظيفة من قاعدة البيانات؟')) {
+                                              setJobs(prev => prev.filter(item => item.id !== j.id));
+                                            }
+                                          }}
+                                          className="p-1 text-red-650 hover:bg-red-50 hover:text-red-700 rounded border border-red-150 transition-all cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SUB-VIEW 3: ANNOUNCEMENTS MANAGEMENT */}
+                {adminJobSubTab === 'announcements' && (
+                  <div className="bg-white rounded-xl shadow border border-slate-200 p-6 space-y-6">
+                    
+                    <div className="flex justify-between items-center border-b border-slate-100 pb-3 text-right">
+                      <h4 className="font-extrabold text-slate-900 text-sm">إدارة التعاميم الرسمية وتحديثات المعاملات</h4>
+                      
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          if (adminEditingAnnouncement) {
+                            setAdminEditingAnnouncement(null);
+                          } else {
+                            setAdminEditingAnnouncement({
+                              id: `ann-${Date.now()}`,
+                              title: '',
+                              content: '',
+                              category: 'news',
+                              date: new Date().toISOString().split('T')[0],
+                              isPinned: false
+                            });
+                            setAdminAnnTitle('');
+                            setAdminAnnContent('');
+                            setAdminAnnCategory('news');
+                            setAdminAnnIsPinned(false);
+                          }
+                        }}
+                        className="px-3.5 py-1.5 bg-slate-900 text-amber-500 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        {adminEditingAnnouncement ? 'إلغاء والعودة للقائمة' : '+ صياغة تعميم أو إعلان إداري جديد'}
+                      </button>
+                    </div>
+
+                    {adminEditingAnnouncement ? (
+                      /* Form content */
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (!adminAnnTitle.trim() || !adminAnnContent.trim()) {
+                            alert('يرجى ملء مسمى البيان ومحتواه.');
+                            return;
+                          }
+
+                          const updatedAnnObj: Announcement = {
+                            ...adminEditingAnnouncement,
+                            title: adminAnnTitle.trim(),
+                            content: adminAnnContent.trim(),
+                            category: adminAnnCategory,
+                            isPinned: adminAnnIsPinned
+                          };
+
+                          setAnnouncements(prev => {
+                            if (prev.some(item => item.id === updatedAnnObj.id)) {
+                              return prev.map(item => item.id === updatedAnnObj.id ? updatedAnnObj : item);
+                            } else {
+                              return [updatedAnnObj, ...prev];
+                            }
+                          });
+
+                          setAdminEditingAnnouncement(null);
+                        }}
+                        className="space-y-4 max-w-xl bg-slate-50 p-5 rounded-xl border border-slate-150 text-right mx-auto"
+                      >
+                        <h4 className="font-extrabold text-slate-850 text-xs text-blue-600">
+                          {adminEditingAnnouncement.title ? `تعديل التعميم: ${adminEditingAnnouncement.title}` : 'المواصفات العامة للبيان الجديد'}
+                        </h4>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-right">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">عنوان التعميم / الخبر <span className="text-rose-600">*</span></label>
+                            <input 
+                              type="text" 
+                              required
+                              placeholder="تعديل ساعات العمل الإداري بمكتب سماء المملكة"
+                              value={adminAnnTitle}
+                              onChange={(e) => setAdminAnnTitle(e.target.value)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">فئة ومجال التعميم</label>
+                            <select 
+                              value={adminAnnCategory}
+                              onChange={(e) => setAdminAnnCategory(e.target.value as any)}
+                              className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500"
+                            >
+                              <option value="alert">🚨 تعميم عاجل ونظامي (Alert)</option>
+                              <option value="news">📢 مستجدات وأخبار عامة (News)</option>
+                              <option value="offer">🏷️ عروض وباقات ترويجية (Promotions)</option>
+                              <option value="holiday">📅 إجازات وجدول الأعياد (Holidays)</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">نص وتوضيح التعميم <span className="text-rose-600">*</span></label>
+                          <textarea 
+                            rows={5}
+                            required
+                            placeholder="اكتب التوجيهات الرسمية بوضوح متناهي..."
+                            value={adminAnnContent}
+                            onChange={(e) => setAdminAnnContent(e.target.value)}
+                            className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right leading-relaxed"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 py-1 select-none">
+                          <input 
+                            type="checkbox" 
+                            id="annPinnedCheck"
+                            checked={adminAnnIsPinned}
+                            onChange={(e) => setAdminAnnIsPinned(e.target.checked)}
+                            className="w-4 h-4 cursor-pointer accent-amber-500"
+                          />
+                          <label htmlFor="annPinnedCheck" className="text-xs font-bold text-slate-850 cursor-pointer">
+                            تثبيت هذا التعميم في صدارة صفحة التوظيف العامة (Pinned)
+                          </label>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                          <button 
+                            type="button"
+                            onClick={() => setAdminEditingAnnouncement(null)}
+                            className="bg-slate-200 text-slate-705 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                          <button 
+                            type="submit"
+                            className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-6 py-2 rounded-xl text-xs font-black transition-all shadow-md cursor-pointer"
+                          >
+                            بث ونشر التعميم فورياً
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      /* Listing of Announcements */
+                      <div className="space-y-4 font-sans text-right">
+                        {announcements.length === 0 ? (
+                          <div className="p-8 text-center text-slate-400 border border-dashed rounded-xl">
+                            لا توجد بيانات تعاميم أو إعلانات مسجلة.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+                            <table className="w-full text-right text-xs">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                                  <th className="p-3">عنوان ونوع ومجال التعقيم الإداري</th>
+                                  <th className="p-3 text-right">نص البيان والمحتوى المختصر</th>
+                                  <th className="p-3">تاريخ البث</th>
+                                  <th className="p-3 text-center">التثبيت بالقمة</th>
+                                  <th className="p-3 text-center">الإجراءات والتحكم</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-150">
+                                {announcements.map((a) => (
+                                  <tr key={a.id} className="hover:bg-slate-50/50">
+                                    <td className="p-3 text-right">
+                                      <div className="font-extrabold text-slate-900">{a.title}</div>
+                                      <span className={`text-[9px] font-black px-2 mt-1 inline-block rounded ${
+                                        a.category === 'alert' ? 'bg-red-50 text-red-700 border border-red-150/20' :
+                                        a.category === 'offer' ? 'bg-indigo-50 text-indigo-700 border border-indigo-150/20' :
+                                        a.category === 'news' ? 'bg-blue-50 text-blue-700 border border-blue-150/20' :
+                                        'bg-amber-50 text-amber-700 border border-amber-150/20'
+                                      }`}>
+                                        {a.category === 'alert' ? '🚨 بيان عاجل ونظامي' : 
+                                         a.category === 'offer' ? '🏷️ عروض وباقات جديدة' : 
+                                         a.category === 'news' ? '📢 مستجدات عامة' : '📅 إجازة تشغيلية'}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      <p className="text-slate-500 line-clamp-2 leading-relaxed">{a.content}</p>
+                                    </td>
+                                    <td className="p-3 font-mono text-slate-500 text-right">
+                                      {new Date(a.date).toLocaleDateString('ar-SA')}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <button 
+                                        type="button"
+                                        onClick={() => {
+                                          setAnnouncements(prev => prev.map(item => item.id === a.id ? { ...item, isPinned: !item.isPinned } : item));
+                                        }}
+                                        className={`px-2 py-0.5 rounded text-[10px] font-black transition-all cursor-pointer ${
+                                          a.isPinned ? 'bg-amber-50 text-amber-750 border border-amber-200' : 'bg-slate-50 text-slate-400 border border-slate-200'
+                                        }`}
+                                      >
+                                        {a.isPinned ? '★ مثبت متصدر' : 'تثبيت'}
+                                      </button>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className="flex justify-center items-center gap-1">
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            setAdminEditingAnnouncement(a);
+                                            setAdminAnnTitle(a.title);
+                                            setAdminAnnContent(a.content);
+                                            setAdminAnnCategory(a.category);
+                                            setAdminAnnIsPinned(!!a.isPinned);
+                                          }}
+                                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold transition-all border border-slate-200 cursor-pointer"
+                                        >
+                                          تعديل
+                                        </button>
+                                        <button 
+                                          type="button"
+                                          onClick={() => {
+                                            if (window.confirm('هل أنت متأكد من مسح هذا التعميم نهائياً؟')) {
+                                              setAnnouncements(prev => prev.filter(item => item.id !== a.id));
+                                            }
+                                          }}
+                                          className="p-1 text-red-650 hover:bg-red-50 hover:text-red-700 rounded border border-red-150 transition-all cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         )}
       </main>
@@ -5172,6 +7122,22 @@ export default function App() {
           setSelectedTx(null);
         }}
         transaction={selectedTx}
+      />
+
+      {/* Checkout Online Payment dialogue */}
+      <CheckoutPaymentModal 
+        isOpen={isCheckoutOpen}
+        onClose={() => {
+          setIsCheckoutOpen(false);
+          setCheckoutService(null);
+        }}
+        service={checkoutService}
+        clientName={clientName}
+        clientPhone={clientPhone}
+        clientNotes={clientNotes}
+        attachedFiles={attachedFiles}
+        onPaymentSuccess={handleCheckoutSuccess}
+        lang={lang}
       />
 
       {/* Hover Info Popup Service Details cards */}

@@ -28,6 +28,16 @@ export interface BookingRequest {
   attachedFileData?: string; // Base64 data URI or indicator
   attachedFileSize?: string;
   attachedFiles?: AttachedFile[];
+  paymentMethod?: 'mada' | 'visa' | 'applepay' | 'stcpay' | 'bank_transfer' | 'cash';
+  paymentStatus?: 'unpaid' | 'paid' | 'processing_transfer';
+  paymentDetails?: {
+    cardEnding?: string;
+    transactionId?: string;
+    stcPhone?: string;
+    bankName?: string;
+    transferReceiptName?: string;
+  };
+  totalAmount?: number;
 }
 
 export interface Transaction {
@@ -184,3 +194,125 @@ export const INITIAL_BOOKINGS: BookingRequest[] = [
     date: '2026-05-18T09:00:00Z'
   }
 ];
+
+export interface Job {
+  id: string;
+  title: string;
+  department: string;
+  location: string;
+  type: 'full-time' | 'part-time' | 'contract';
+  salary: string;
+  description: string;
+  requirements: string[];
+  date: string;
+  status: 'active' | 'closed';
+  shares?: number;
+}
+
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  date: string;
+  category: 'alert' | 'offer' | 'news' | 'holiday';
+  isPinned?: boolean;
+}
+
+export interface JobApplication {
+  id: string;
+  jobId: string;
+  jobTitle: string;
+  applicantName: string;
+  applicantPhone: string;
+  applicantEmail?: string;
+  coverLetter?: string;
+  cvFileName?: string;
+  cvFileData?: string;
+  date: string;
+  status: 'pending' | 'reviewed' | 'accepted' | 'rejected';
+}
+
+export const INITIAL_JOBS: Job[] = [
+  {
+    id: 'job-1',
+    title: 'معقب معاملات ميداني',
+    department: 'قسم التعقيب والخدمات الحكومية',
+    location: 'الرياض',
+    type: 'full-time',
+    salary: '٥,٥٠٠ - ٧,٠٠٠ ر.س',
+    description: 'مطلوب معقب ذو خبرة لا تقل عن سنتين في إنهاء وتخليص المعاملات لدى الدوائر الحكومية والبلديات ومكتب العمل والجوازات والوزارات المختلفة مع مهارات قيادة جيدة وسيارة خاصة.',
+    requirements: [
+      'خبرة عملية مثبتة في التعقيب والتعامل مع منصات (قوى، أبشر أعمال، رخصة بلدي، سلامة).',
+      'معرفة ممتازة بكافة اللوائح والأنظمة الحكومية للمنشآت في المملكة.',
+      'امتلاك سيارة ورخصة قيادة سارية المفعول.',
+      'مهارات جيدة في التواصل وحل المشكلات واللباقة مع الموظفين.'
+    ],
+    date: '2026-05-28T08:00:00Z',
+    status: 'active',
+    shares: 14
+  },
+  {
+    id: 'job-2',
+    title: 'موظف خدمة عملاء واستقبال',
+    department: 'الإدارة العامة والموارد البشرية',
+    location: 'جدة',
+    type: 'full-time',
+    salary: '٤,٠٠٠ - ٥,٠٠٠ ر.س',
+    description: 'نبحث عن ممثل خدمة عملاء متميز لفرعنا الجديد في جدة ليرحب بالعملاء، ويجيب على الاستفسارات الهاتفية والمباشرة بشأن خدمات التأشيرات والتعقيب، ويسجل طلباتهم على النظام الإلكتروني للمكتب.',
+    requirements: [
+      'شهادة دبلوم أو ثانوية عامة كحد أدنى مع مهارات استخدام الحاسب الآلي.',
+      'اللباقة والقدرة العالية على التعامل مع الجمهور وتوجيههم وتسهيل معاملاتهم.',
+      'سرعة في الكتابة وإدخال البيانات ومتابعة تذاكر الدعم والطلبات المعلقة.',
+      'مقيم بمدينة جدة ولديه شغف لتقديم أرقى مستويات الخدمة للعملاء.'
+    ],
+    date: '2026-05-30T10:00:00Z',
+    status: 'active',
+    shares: 8
+  },
+  {
+    id: 'job-3',
+    title: 'مستشار تطوير أعمال ومبيعات خدمات',
+    department: 'قسم التسويق وتطوير الأعمال',
+    location: 'الرياض',
+    type: 'contract',
+    salary: 'عمولات عالية + راتب أساسي',
+    description: 'العمل على استقطاب وتوقيع اتفاقيات خدمات التعقيب واللوجستيات مع الشركات والمنشآت التجارية الكبرى والناشئة لتولي كافة شؤونهم في وزارة العمل والمنافذ الحدودية.',
+    requirements: [
+      'خبرة سابقة في مبيعات وعقود الـ B2B للخدمات القانونية أو خدمات التعقيب والاستقدام.',
+      'شبكة علاقات عامة واسعة مع مديري الموارد البشرية والمديرين التنفيذيين بالرياض.',
+      'القدرة على إعداد وتقديم العروض التجارية والتفاوض وإبرام الصفقات بنجاح.',
+      'مرونة عالية في العمل وروح المبادرة والبيع الاستباقي.'
+    ],
+    date: '2026-05-31T12:00:00Z',
+    status: 'active',
+    shares: 5
+  }
+];
+
+export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
+  {
+    id: 'ann-1',
+    title: 'تنويه هام: بدء استقبال طلبات التعاقد لخدمات حجاج بيت الله الحرام لموسم ١٤٤٧هـ',
+    content: 'يعلن مكتب سما المملكة عن تدشين قسم خدمة ضيوف الرحمن وفتح باب التسجيل المسبق للشركات والمجموعات الراغبة في حجز باقات تأشيرات وتصاريح الحج وتأشيرات العمل المؤقت للموسم القادم. يرجى التواصل مع إدارة العمليات لضمان أولوية التخصيص والمتابعة الإدارية الفورية.',
+    date: '2026-05-25T09:00:00Z',
+    category: 'offer',
+    isPinned: true
+  },
+  {
+    id: 'ann-2',
+    title: 'تهنئة وتبريكات بمناسبة تحقيق جائزة المكتب الأكثر تميزاً في خدمات استقدام التأشيرات والتعقيب بالمنطقة الوسطى',
+    content: 'يسرنا في مكتب سما المملكة أن نشارككم فخرنا واعتزازنا بالحصول على درع الموثوقية والتميز الرقمي لعام ٢٠٢٦ من الهيئة المانحة لجودة الخدمات العامة. ونعد عملائنا الكرام بمواصلة بذل أقصى الجهود والالتزام بتسريع دورات تسليم المعاملات والشفافية التامة.',
+    date: '2026-05-29T11:30:00Z',
+    category: 'news',
+    isPinned: false
+  },
+  {
+    id: 'ann-3',
+    title: 'إعلان ساعات العمل الرسمية خلال إجازة عيد الأضحى المبارك',
+    content: 'نود إحاطة عملائنا الكرام ورجال الأعمال المتعاقدين معنا، بأن عطلة العيد ستبدأ إن شاء الله من يوم الأحد ٩ ذي الحجة وتستمر حتى نهاية يوم الأربعاء ١٢ ذي الحجة. على أن يستأنف العمل بشكل طبيعي وتلقي طلبات المتابعة الطارئة عبر الخط الساخن ومنصة المعاملات الإلكترونية الذكية على مدار الساعة.',
+    date: '2026-05-31T14:00:00Z',
+    category: 'holiday',
+    isPinned: false
+  }
+];
+
