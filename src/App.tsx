@@ -1,0 +1,5676 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Briefcase, Compass, Users, FileText, Truck, Plane, 
+  TrendingUp, Coins, Receipt, Calendar, Search, Lock, 
+  Plus, Trash2, CheckCircle2, AlertCircle, Download, 
+  LogOut, Home, Info, ShieldCheck, Activity, ChevronLeft, 
+  PlusCircle, FileSpreadsheet, ListFilter, HelpCircle, PhoneCall, FolderPlus,
+  Paperclip, Eye, Upload, Sparkles, Sun, Moon, ArrowUpDown,
+  MessageSquare, Send, Clock, Smartphone, Building, Printer,
+  Facebook, Instagram, Linkedin, Youtube, Twitter, X, Minimize2, Globe
+} from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
+
+import { 
+  Service, BookingRequest, Transaction, AttachedFile,
+  DEFAULT_SERVICES, INITIAL_TRANSACTIONS, INITIAL_BOOKINGS 
+} from './types';
+
+import PasscodeModal from './components/PasscodeModal';
+import InvoiceDetailModal from './components/InvoiceDetailModal';
+import ServiceParallaxCard from './components/ServiceParallaxCard';
+
+// WhatsApp Notification Log Interface
+export interface WhatsAppLog {
+  id: string;
+  bookingId: string;
+  clientName: string;
+  phoneNumber: string;
+  serviceName: string;
+  status: 'pending' | 'processing' | 'completed' | 'cancelled';
+  message: string;
+  sentAt: string;
+  success: boolean;
+  apiResponse: string;
+}
+
+// Placeholder/Mock API integration to simulate WhatsApp notifications
+const sendPlaceholderWhatsAppAPI = async (phoneNumber: string, message: string) => {
+  try {
+    const response = await fetch('https://jsonplaceholder.typicode.com/posts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: phoneNumber,
+        body: message,
+        client: 'SamaAlMamlaka_WA_Gateway',
+        timestamp: new Date().toISOString()
+      })
+    });
+    
+    if (!response.ok) {
+      const errorStatusText = response.statusText || 'Unknown Status';
+      const errorMsg = `مشكلة الاتصال بالبوابة: ${response.status} (${errorStatusText})`;
+      
+      // Basic Error Logging to console
+      console.error(`[WhatsApp API Error Status] Failed dispatching to ${phoneNumber}. Status: ${response.status}. Details: ${errorMsg}`);
+      
+      // Separate global log array/variable for telemetry debugging
+      if (typeof window !== 'undefined') {
+        const errorLog = {
+          timestamp: new Date().toISOString(),
+          recipient: phoneNumber,
+          messagePreview: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+          type: 'HTTP_STATUS_ERROR',
+          statusCode: response.status,
+          statusText: errorStatusText,
+          details: errorMsg
+        };
+        (window as any).whatsappErrorLogs = (window as any).whatsappErrorLogs || [];
+        (window as any).whatsappErrorLogs.push(errorLog);
+      }
+
+      throw new Error(errorMsg);
+    }
+    
+    const data = await response.json();
+    return {
+      success: true,
+      apiResponse: JSON.stringify({
+        status: 'queued',
+        messageId: `wa-msg-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        gateway: 'https://api.whatsapp.mock/v1/messages',
+        payload: {
+          id: data.id,
+          recipient: phoneNumber,
+          message_preview: message.substring(0, 50) + "..."
+        }
+      }, null, 2)
+    };
+  } catch (error: any) {
+    const errorMsg = error?.message || 'خطأ غير معروف في الشبكة أو البوابة';
+    
+    // Basic Error Logging to console on failed connection or thrown error
+    console.error(`[WhatsApp API Exception] Thrown error while sending to ${phoneNumber}. Message: ${errorMsg}`);
+    if (error?.stack) {
+      console.error('[WhatsApp API Exception Stack]', error.stack);
+    }
+
+    // Separate global log array/variable for telemetry debugging
+    if (typeof window !== 'undefined') {
+      const exceptionLog = {
+        timestamp: new Date().toISOString(),
+        recipient: phoneNumber,
+        messagePreview: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+        type: 'EXCEPTION_ERROR',
+        details: errorMsg,
+        stack: error?.stack || null
+      };
+      (window as any).whatsappErrorLogs = (window as any).whatsappErrorLogs || [];
+      (window as any).whatsappErrorLogs.push(exceptionLog);
+    }
+
+    return {
+      success: false,
+      apiResponse: errorMsg
+    };
+  }
+};
+
+// Import image assets to allow proper bundling by Vite
+// @ts-ignore
+import makkahSunriseImg from './assets/images/makkah_sunrise_1779229201653.png';
+// @ts-ignore
+import makkahSunsetImg from './assets/images/makkah_bg_1779228945233.png';
+// @ts-ignore
+import makkahNightImg from './assets/images/makkah_night_1779229182943.png';
+// @ts-ignore
+import samaLogoImg from './assets/images/sama_logo_1779229636162.png';
+
+// Helper to normalize attached files for a booking request (supports single and multiple files)
+const getBookingFiles = (b: BookingRequest): Array<{ name: string; data: string; size: string }> => {
+  if (b.attachedFiles && b.attachedFiles.length > 0) {
+    return b.attachedFiles;
+  }
+  if (b.attachedFileName) {
+    return [{
+      name: b.attachedFileName,
+      data: b.attachedFileData || '',
+      size: b.attachedFileSize || ''
+    }];
+  }
+  return [];
+};
+
+const AVAILABLE_ICONS = [
+  // --- المستندات والمعاملات ---
+  { value: "FileText", label: "📄 ملف مستند نصي (FileText)" },
+  { value: "File", label: "📄 ملف مستقل (File)" },
+  { value: "Files", label: "📚 ملفات متعددة ومرفقات (Files)" },
+  { value: "FileSpreadsheet", label: "📊 جدول بيانات مالي أو إحصائي (FileSpreadsheet)" },
+  { value: "FileCheck", label: "✅ ملف معتمد ومفحوص (FileCheck)" },
+  { value: "FileSignature", label: "✍️ توقيع إلكتروني وعقد (FileSignature)" },
+  { value: "Clipboard", label: "📋 حافظة متابعة مهام (Clipboard)" },
+  { value: "ClipboardList", label: "📋 قائمة مراجعات متكاملة (ClipboardList)" },
+  { value: "ClipboardCheck", label: "✔️ استمارة مكتملة ومدققة (ClipboardCheck)" },
+  { value: "Folder", label: "📁 مجلد مستندات (Folder)" },
+  { value: "FolderOpen", label: "📂 مجلد مفتوح (FolderOpen)" },
+  { value: "FolderPlus", label: "📁 مجلد معاملة جديدة (FolderPlus)" },
+  { value: "Archive", label: "🗄️ الأرشيف والحفظ التاريخي (Archive)" },
+  { value: "BookOpen", label: "📖 دليل شروط أو كتيب (BookOpen)" },
+  { value: "Scroll", label: "📜 وثيقة رسمية أو صك شرعي (Scroll)" },
+
+  // --- الأعمال والاستقدام والخدمات الحكومية ---
+  { value: "Briefcase", label: "💼 أعمال، تأشيرات تجارية واستقدام (Briefcase)" },
+  { value: "Users", label: "👥 عائلات، أفراد ومجموعات مستفيدة (Users)" },
+  { value: "User", label: "👤 عميل فردي (User)" },
+  { value: "UserPlus", label: "➕ إضافة تابع أو مستفيد جديد (UserPlus)" },
+  { value: "UserCheck", label: "✔️ اعتماد وتأهيل مستخدم (UserCheck)" },
+  { value: "Building", label: "🏛️ مبنى بلدي أو إدارة حكومية (Building)" },
+  { value: "Building2", label: "🏢 منشأة تجارية أو شركة (Building2)" },
+  { value: "Landmark", label: "🏛️ قطاع مصرفي وبنوك مالية (Landmark)" },
+  { value: "Compass", label: "🧭 توجيه وإرشاد معاملات (Compass)" },
+  { value: "Globe", label: "🌐 خدمات دولية وسفر خارجي (Globe)" },
+  { value: "MapPin", label: "📍 موقع جغرافي وفروع المكتب (MapPin)" },
+  { value: "Map", label: "🗺️ خريطة بلدي ومخطط فروع (Map)" },
+
+  // --- السفر واللوجستيات والنقل ---
+  { value: "Plane", label: "✈️ طيران وسفر خارجي للأفراد (Plane)" },
+  { value: "Truck", label: "🚚 خدمات نقل بري، بضائع وشحن لوجستي (Truck)" },
+  { value: "Car", label: "🚗 ليموزين مواصلات وسيارات (Car)" },
+  { value: "Ship", label: "🚢 شحن بحري وتأشيرات بحارة (Ship)" },
+  { value: "Navigation", label: "🧭 إبحار وتجوال وتوجيه (Navigation)" },
+
+  // --- المواعيد والجدولة والتوقيت ---
+  { value: "Calendar", label: "📅 حجز موعد وجدولة مراجعات (Calendar)" },
+  { value: "Clock", label: "⏰ توقيت وتتبع فترات زمنية (Clock)" },
+  { value: "Hourglass", label: "⏳ معاملة قيد الانتظار أو الإجراء (Hourglass)" },
+  { value: "Bell", label: "🔔 إشعارات وتنبيهات هامة (Bell)" },
+  { value: "BellRing", label: "🕭 جرس إشعار عاجل (BellRing)" },
+  { value: "Sun", label: "☀️ مواعيد نهارية (Sun)" },
+  { value: "Moon", label: "🌙 عمرة وحج ومواسم دينية (Moon)" },
+
+  // --- المالية، المدفوعات والضرائب ---
+  { value: "Coins", label: "💰 أتعاب ورسوم حكومية (Coins)" },
+  { value: "CreditCard", label: "💳 سداد إلكتروني ورسوم دفع (CreditCard)" },
+  { value: "Wallet", label: "👛 محفظة مالية واسترجاع مدفوعات (Wallet)" },
+  { value: "Receipt", label: "🧾 فاتورة سداد ورسوم ضريبية (Receipt)" },
+  { value: "DollarSign", label: "💵 عملات نقدية وصرف ومصروفات (DollarSign)" },
+  { value: "Percent", label: "٪ نسبة خصم وضريبة مضافة (Percent)" },
+  { value: "TrendingUp", label: "📈 مؤشرات نمو وأرباح (TrendingUp)" },
+  { value: "TrendingDown", label: "📉 انخفاض مالي خسائر وأوزان (TrendingDown)" },
+
+  // --- التواصل والدعم الفني والأدوات والأمان ---
+  { value: "PhoneCall", label: "📞 اتصال واستفسار هاتفي (PhoneCall)" },
+  { value: "Phone", label: "☎️ هاتف خدمة عملاء (Phone)" },
+  { value: "PhoneForwarded", label: "📞 تحويل المكالمات (PhoneForwarded)" },
+  { value: "MessageSquare", label: "💬 إشعار واتساب وتواصل كتابي (MessageSquare)" },
+  { value: "MessagesSquare", label: "💬 نقاشات ومحادثات متعددة (MessagesSquare)" },
+  { value: "MessageCircle", label: "💬 دردشة فورية فردية (MessageCircle)" },
+  { value: "Send", label: "✉️ إرسال رسائل أو معاملات (Send)" },
+  { value: "Mail", label: "📧 بريد إلكتروني ومراسلات رسمية (Mail)" },
+  { value: "HelpCircle", label: "❓ دعم فني وإجابة استفسارات (HelpCircle)" },
+  { value: "ShieldCheck", label: "🛡️ ضمان وأمان وتوثيق ومصادقة (ShieldCheck)" },
+  { value: "Lock", label: "🔒 خصوصية وخدمات سرية (Lock)" },
+  { value: "Unlock", label: "🔓 معاملات منتهية الصلاحية (Unlock)" },
+  { value: "Key", label: "🔑 حقوق وصول وتراخيص (Key)" },
+  { value: "KeyRound", label: "🔑 تراخيص أمان رقمية (KeyRound)" },
+  { value: "Eye", label: "👁️ معاينة وتدقيق مستندات (Eye)" },
+  { value: "Info", label: "ℹ️ دليل إرشادي وتفاصيل المعاملة (Info)" },
+  { value: "AlertTriangle", label: "⚠️ شروط وضوابط هامة (AlertTriangle)" },
+  { value: "AlertCircle", label: "🔴 تنبيه مهم وعقوبة (AlertCircle)" },
+  { value: "CheckCircle2", label: "🟢 مراجعة واكتمال تام مقنع (CheckCircle2)" },
+  { value: "Printer", label: "🖨️ طباعة تراخيص وتقارير فواتير (Printer)" },
+  { value: "Laptop", label: "💻 جهاز حاسب آلي وخِدْمات إلكترونية (Laptop)" },
+  { value: "Smartphone", label: "📱 تطبيق جوال وتفعيل حساب (Smartphone)" },
+  { value: "Settings", label: "⚙️ إعدادات وخيارات متقدمة (Settings)" },
+  { value: "Wrench", label: "🔧 خدمات صيانة ودعم إجرائي (Wrench)" },
+  { value: "Sparkles", label: "✨ خدمات ذهبية ومميزات (Sparkles)" },
+  { value: "Star", label: "⭐ تقييم جودة الخدمة ورضا العملاء (Star)" },
+  { value: "Heart", label: "❤️ باقات رعاية وعروض محبة للعملاء (Heart)" }
+];
+
+export default function App() {
+  // --- STATE DECLARATIONS ---
+  const [lang, setLang] = useState<'ar' | 'en'>(() => {
+    return (localStorage.getItem('sm_lang') as 'ar' | 'en') || 'ar';
+  });
+
+  const toggleLanguage = () => {
+    const nextLang = lang === 'ar' ? 'en' : 'ar';
+    setLang(nextLang);
+    localStorage.setItem('sm_lang', nextLang);
+  };
+
+  const t = (key: string) => {
+    const dict: Record<'ar' | 'en', Record<string, string>> = {
+      ar: {
+        appName: 'مكتب سما المملكة',
+        appSubtitle: 'الخدمات المتكاملة',
+        home: 'الرئيسية',
+        track: 'الاستعلام عن طلب',
+        adminPanel: 'لوحة التحكم والعمليات',
+        portalTitleDefault: 'البوابة الرسمية والذكية للمستفيدين',
+        heroTitle: 'ننجز معاملاتك بكل ثقة وكفاءة',
+        heroSubtitle: 'سجل الحسابات والتعقيب متصل بالبوابة الموحدة للمملكة',
+        servicesTitle: 'دليل الخدمات والتكاليف والرسوم',
+        servicesDesc: 'تحديد دقيق وموثق للتكاليف الإدارية للمكتب والرسوم التابعة للدولة قبل البدء بالمعاملة.',
+        taxUpdate: 'محدثة حسب اللوائح الضريبية لعام 2026 (15%)',
+        searchPlaceholder: 'ابحث عن الخدمة التي تحتاجها...',
+        allCategories: 'كل الخدمات',
+        sortNameAsc: 'الاسم (أ - ي)',
+        sortNameDesc: 'الاسم (ي - أ)',
+        sortPriceAsc: 'السعر الإجمالي (تصاعدي)',
+        sortPriceDesc: 'السعر الإجمالي (تنازلي)',
+        submitRequest: 'استمارة تقديم حجز معاملة رقمية جديدة',
+        submitRequestDesc: 'يرجى تعبئة الحقول أدناه لتأكيد حجز الخدمة، وسيقوم فريق المختصين بمراجعتها وإصدار الفاتورة.',
+        clientNameLabel: 'اسم العميل الكامل (الرباعي):',
+        clientNamePlaceholder: 'مثلاً: عبد الله بن محمد العتيبي',
+        phoneLabel: 'رقم الهاتف الجوال المقترن بالواتساب:',
+        phonePlaceholder: '05xxxxxxxx',
+        selectedServiceLabel: 'الخدمة المختارة للحجز الإجرائي:',
+        attachmentLabel: 'المستندات والوثائق الثبوتية الداعمة (اختياري - مسموح بملفات متعددة):',
+        dropfiles: 'اسحب وأسقط الملفات هنا، أو انقر للتصفح',
+        fileLimit: 'الحد الأقصى للملف الواحد: 10 ميجا الحجم الإجمالي المسموح للطلب 35 ميجا.',
+        notesLabel: 'ملاحظات وتفاصيل إضافية عن المعاملة والطلبات المحددة:',
+        notesPlaceholder: 'يرجى كتابة أي تفاصيل، شروط، أو متمتطلبات خاصة بالخدمة هنا لتسهيل وسرعة الإنجاز...',
+        confirmSend: 'تأكيد الإرسال والترحيل لمكتب سما المملكة',
+        sending: 'جاري الإرسال...',
+        requestAddedSuccess: 'تم إرسال طلبك بنجاح لمكتب سما المملكة الرقم المرجعي: ',
+        footerTitle: 'مكتب سما المملكة للخدمات المتكاملة',
+        footerDesc: 'المنصة الموحدة الذكية التابعة لمكتب سما المملكة للخدمات وتخليص المعاملات الإلكترونية الحكومية.',
+        allRightsReserved: 'جميع الحقوق محفوظة لمكتب سما المملكة للخدمات المتكاملة © 2026',
+        saudiVision: 'تحت مظلة المبادرات الرقمية لرؤية المملكة 2030',
+        trackTitle: 'استعلم وتتبع حالة معاملتك فوراً',
+        trackDesc: 'أدخل رقم جوالك المسجل للبحث عن حالة كافة الحجوزات السابقة والمعاملات قيد الإجراء والاطلاع على تفاصيل الفاتورة.',
+        phoneSearchLabel: 'رقم جوال المستفيد المسجل بالطلب:',
+        searchBtn: 'ابحث الآن بالأرشيف المالي',
+        noResultsTitle: 'لا توجد معاملات مسجلة',
+        noResultsDesc: 'الرقم الذي أدخلته لا يطابق أي معاملة حالية في أرشيف مكتب سما المملكة.',
+        orderStatus: 'حالة المعاملة',
+        invoiceDetail: 'تفاصيل الفاتورة الرسمية',
+        status_pending: 'قيد الانتظار والتدقيق',
+        status_processing: 'قيد الإجراء والتعقيب',
+        status_completed: 'مكتملة وجاهزة للتسليم',
+        status_cancelled: 'ملغاة أو مرفوضة',
+        viewInvoice: 'عرض مستند الفاتورة',
+        close: 'إغلاق',
+        localTimePrefix: 'التوقيت المحلي لإنهاء المعاملات:',
+        currentUserPrefix: 'المستخدم الحالي للفوترة:'
+      },
+      en: {
+        appName: 'Sama Al-Mamlakah Office',
+        appSubtitle: 'Integrated Services',
+        home: 'Home',
+        track: 'Track Request',
+        adminPanel: 'Admin Panel & Operations',
+        portalTitleDefault: 'Official & Smart Portal for Beneficiaries',
+        heroTitle: 'We Process Your Transactions with Complete Trust & Efficiency',
+        heroSubtitle: 'Accounting & tracking records connected to the Unified Saudi Portal',
+        servicesTitle: 'Services Guide, Costs & Fees',
+        servicesDesc: 'Accurate and documented specification of the office administrative costs and government state fees before starting.',
+        taxUpdate: 'Updated to 2026 National Tax Regulations (15%)',
+        searchPlaceholder: 'Search for the service you need...',
+        allCategories: 'All Services',
+        sortNameAsc: 'Name (A - Z)',
+        sortNameDesc: 'Name (Z - A)',
+        sortPriceAsc: 'Total Price (Low to High)',
+        sortPriceDesc: 'Total Price (High to Low)',
+        submitRequest: 'New Digital Transaction Booking Form',
+        submitRequestDesc: 'Please fill in the fields below to confirm the service booking. Our specialists will review it and issue your invoice.',
+        clientNameLabel: 'Client Full Name (Quadruple):',
+        clientNamePlaceholder: 'e.g., Abdullah bin Mohammed Al-Otaibi',
+        phoneLabel: 'Mobile Phone Number (associated with WhatsApp):',
+        phonePlaceholder: '05xxxxxxxx',
+        selectedServiceLabel: 'Selected Service for Procedural Booking:',
+        attachmentLabel: 'Supported Identification Documents (Optional - Multiple allowed):',
+        dropfiles: 'Drag & drop files here, or click to browse',
+        fileLimit: 'Max file size: 10MB. Maximum total size allowed is 35MB.',
+        notesLabel: 'Additional notes & specific requests for the transaction:',
+        notesPlaceholder: 'Please write any details, terms, or specific requirements here to facilitate quick processing...',
+        confirmSend: 'Confirm Submission & Send to Sama Al-Mamlakah Office',
+        sending: 'Submitting...',
+        requestAddedSuccess: 'Your request has been submitted successfully to Sama Al-Mamlakah! Reference Number: ',
+        footerTitle: 'Sama Al-Mamlakah Office for Integrated Services',
+        footerDesc: 'Unified smart platform affiliated with Sama Al-Mamlakah for government e-services and clearance.',
+        allRightsReserved: 'All rights reserved to Sama Al-Mamlakah Office for Integrated Services © 2026',
+        saudiVision: 'Under the umbrella of Saudi Vision 2030 digital initiatives',
+        trackTitle: 'Inquire & Track Your Transaction Instantly',
+        trackDesc: 'Enter your registered mobile number to search for past bookings, active transactions, and view invoice details.',
+        phoneSearchLabel: 'Registered mobile number of the beneficiary:',
+        searchBtn: 'Search Financial Archive Now',
+        noResultsTitle: 'No Transactions Found',
+        noResultsDesc: 'The phone number you entered does not match any transactions in the archives of Sama Al-Mamlakah.',
+        orderStatus: 'Transaction Status',
+        invoiceDetail: 'Official Invoice Details',
+        status_pending: 'Pending Administrative Verification',
+        status_processing: 'In Progress & Government Follow-up',
+        status_completed: 'Completed & Ready for Delivery',
+        status_cancelled: 'Cancelled or Rejected',
+        viewInvoice: 'View Invoice Document',
+        close: 'Close',
+        localTimePrefix: 'Local time for transactions processing:',
+        currentUserPrefix: 'Current billing user:'
+      }
+    };
+    return dict[lang][key] || key;
+  };
+
+  const [selectedRegionTab, setSelectedRegionTab] = useState<'all' | 'asia' | 'africa'>('all');
+
+  const getWelcomeText = () => {
+    if (lang === 'en') {
+      return 'Welcome to Sama Al-Mamlakah Office Platform for integrated services and government electronic transactions clearance. We are pleased to serve you and execute all your transactions with complete precision, safety, and speed under the supervision of elite specialists and professionals.';
+    }
+    return welcomeMessage;
+  };
+
+  const [services, setServices] = useState<Service[]>(() => {
+    const saved = localStorage.getItem('sm_services');
+    let loaded: Service[] = saved ? JSON.parse(saved) : DEFAULT_SERVICES;
+    
+    // Check if we already applied the 10% increase to visa services
+    const migKey = 'sm_visa_fees_raised_v2';
+    if (!localStorage.getItem(migKey)) {
+      loaded = loaded.map(s => {
+        if (s.category === 'visa') {
+          return {
+            ...s,
+            govFee: Math.round(s.govFee * 1.1),
+            officeFee: Math.round(s.officeFee * 1.1)
+          };
+        }
+        return s;
+      });
+      localStorage.setItem(migKey, 'true');
+      localStorage.setItem('sm_services', JSON.stringify(loaded));
+    }
+
+    // Modern distinct icons automatic safety upgrader for users on current browser session
+    let iconsMigrated = false;
+    loaded = loaded.map(s => {
+      if (s.id === 'srv-2' && s.icon === 'Compass') {
+        iconsMigrated = true;
+        return { ...s, icon: 'Moon' };
+      }
+      if (s.id === 'srv-4' && s.icon === 'FileText') {
+        iconsMigrated = true;
+        return { ...s, icon: 'Building' };
+      }
+      return s;
+    });
+
+    if (iconsMigrated) {
+      localStorage.setItem('sm_services', JSON.stringify(loaded));
+    }
+
+    return loaded;
+  });
+
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    const saved = localStorage.getItem('sm_transactions');
+    let loaded: Transaction[] = saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+    
+    // Check if we should migrate pre-populated transactions too
+    const migKeyTx = 'sm_visa_tx_fees_raised_v2';
+    if (!localStorage.getItem(migKeyTx)) {
+      loaded = loaded.map(t => {
+        if (t.serviceName === 'تأشيرة عمل' && t.govFee === 2000 && t.officeFee === 500) {
+          const govFee = 2200;
+          const officeFee = 550;
+          const tax = 82.5;
+          const total = 2832.5;
+          return { ...t, govFee, officeFee, tax, total };
+        }
+        if (t.serviceName === 'تأشيرة عمرة وحج' && t.govFee === 300 && t.officeFee === 150) {
+          const govFee = 330;
+          const officeFee = 165;
+          const tax = 24.75;
+          const total = 519.75;
+          return { ...t, govFee, officeFee, tax, total };
+        }
+        return t;
+      });
+      localStorage.setItem(migKeyTx, 'true');
+      localStorage.setItem('sm_transactions', JSON.stringify(loaded));
+    }
+    return loaded;
+  });
+
+  const [bookings, setBookings] = useState<BookingRequest[]>(() => {
+    const saved = localStorage.getItem('sm_bookings');
+    return saved ? JSON.parse(saved) : INITIAL_BOOKINGS;
+  });
+
+  // Dynamic service categories
+  const [categories, setCategories] = useState<{ id: string; nameAr: string; color: string }[]>(() => {
+    const DEFAULT_CATEGORIES = [
+      { id: 'visa', nameAr: 'خدمات تأشيرات وسفر', color: 'purple' },
+      { id: 'gov', nameAr: 'تعقيب ومراجعة دائرية', color: 'amber' },
+      { id: 'transport', nameAr: 'نقل ومواصلات وشحن', color: 'blue' },
+      { id: 'other', nameAr: 'خدمات عامة مخصصة', color: 'emerald' }
+    ];
+    const saved = localStorage.getItem('sm_service_categories');
+    return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sm_service_categories', JSON.stringify(categories));
+  }, [categories]);
+
+  // Handle addition of custom categories form inside Admin Services tab
+  const [newCatId, setNewCatId] = useState('');
+  const [newCatNameAr, setNewCatNameAr] = useState('');
+  const [newCatColor, setNewCatColor] = useState('indigo');
+
+  const getCategoryStyles = (catId: string) => {
+    const cat = categories.find(c => c.id === catId) || { id: catId, nameAr: catId, color: 'emerald' };
+    const color = cat.color || 'emerald';
+    
+    const map: { [key: string]: { badge: string; bg: string; icon: string } } = {
+      purple: {
+        badge: "bg-purple-50 text-purple-700 border-purple-100",
+        bg: "bg-purple-500",
+        icon: "bg-purple-50 border-purple-100 text-purple-700"
+      },
+      amber: {
+        badge: "bg-amber-50 text-amber-700 border-amber-100",
+        bg: "bg-amber-500",
+        icon: "bg-amber-50 border-amber-100 text-amber-700"
+      },
+      blue: {
+        badge: "bg-blue-50 text-blue-700 border-blue-100",
+        bg: "bg-blue-500",
+        icon: "bg-blue-50 border-blue-100 text-blue-700"
+      },
+      emerald: {
+        badge: "bg-emerald-50 text-emerald-700 border-emerald-100",
+        bg: "bg-emerald-500",
+        icon: "bg-emerald-50 border-emerald-100 text-emerald-700"
+      },
+      indigo: {
+        badge: "bg-indigo-50 text-indigo-700 border-indigo-100",
+        bg: "bg-indigo-500",
+        icon: "bg-indigo-50 border-indigo-100 text-indigo-700"
+      },
+      rose: {
+        badge: "bg-rose-50 text-rose-700 border-rose-100",
+        bg: "bg-rose-500",
+        icon: "bg-rose-50 border-rose-100 text-rose-700"
+      },
+      cyan: {
+        badge: "bg-cyan-50 text-cyan-700 border-cyan-100",
+        bg: "bg-cyan-500",
+        icon: "bg-cyan-50 border-cyan-100 text-cyan-700"
+      },
+      orange: {
+        badge: "bg-orange-50 text-orange-700 border-orange-100",
+        bg: "bg-orange-500",
+        icon: "bg-orange-50 border-orange-100 text-orange-700"
+      },
+      slate: {
+        badge: "bg-slate-50 text-slate-700 border-slate-100",
+        bg: "bg-slate-500",
+        icon: "bg-slate-50 border-slate-100 text-slate-705"
+      }
+    };
+    return map[color] || map.emerald;
+  };
+
+  const getCategoryName = (catId: string) => {
+    const cat = categories.find(c => c.id === catId);
+    return cat ? cat.nameAr : catId;
+  };
+
+  // Current tab: 'home' | 'track' | 'admin'
+  const [activeTab, setActiveTab] = useState<'home' | 'track' | 'admin'>('home');
+  
+  // Admin Authentication State
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    return sessionStorage.getItem('sm_admin_logged') === 'true';
+  });
+  const [showPasscode, setShowPasscode] = useState(false);
+
+  // Home Page Form states
+  const [clientName, setClientName] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [clientNotes, setClientNotes] = useState('');
+  const [submissionFeedback, setSubmissionFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+
+  // Client requests search status
+  const [searchPhone, setSearchPhone] = useState('');
+  const [hasSearched, setHasSearched] = useState(false);
+  const [trackedRequests, setTrackedRequests] = useState<BookingRequest[]>([]);
+
+  // Selected Transaction for printable Invoice view
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
+
+  // Admin Inner-Tab: 'ledger' | 'requests' | 'services' | 'stats' | 'whatsapp'
+  const [adminTab, setAdminTab] = useState<'stats' | 'requests' | 'ledger' | 'services' | 'whatsapp'>('stats');
+
+  // New Transaction Form State (Admin)
+  const [txClientName, setTxClientName] = useState('');
+  const [txServiceId, setTxServiceId] = useState(DEFAULT_SERVICES[0]?.id || '');
+  const [txGovFee, setTxGovFee] = useState<number>(DEFAULT_SERVICES[0]?.govFee || 0);
+  const [txOfficeFee, setTxOfficeFee] = useState<number>(DEFAULT_SERVICES[0]?.officeFee || 0);
+  const [txNotes, setTxNotes] = useState('');
+
+  // New Dynamic Service Form State (Admin)
+   const [newSrvName, setNewSrvName] = useState('');
+  const [newSrvDesc, setNewSrvDesc] = useState('');
+  const [newSrvGovFee, setNewSrvGovFee] = useState<number>(0);
+  const [newSrvOfficeFee, setNewSrvOfficeFee] = useState<number>(0);
+  const [newSrvCategory, setNewSrvCategory] = useState<string>('visa');
+  const [newSrvIcon, setNewSrvIcon] = useState('PlusCircle');
+  const [iconSearchNew, setIconSearchNew] = useState('');
+  const [iconSearchEdit, setIconSearchEdit] = useState('');
+  const [newSrvAdditionalFees, setNewSrvAdditionalFees] = useState<{ id: string; name: string; amount: number }[]>([]);
+  const [tempFeeNameNew, setTempFeeNameNew] = useState('');
+  const [tempFeeAmountNew, setTempFeeAmountNew] = useState<number | ''>('');
+  const [tempFeeNameEdit, setTempFeeNameEdit] = useState('');
+  const [tempFeeAmountEdit, setTempFeeAmountEdit] = useState<number | ''>('');
+  const [editingService, setEditingService] = useState<Service | null>(null);
+  const [serviceToDeleteCheck, setServiceToDeleteCheck] = useState<Service | null>(null);
+  const [showCannotDeleteAlert, setShowCannotDeleteAlert] = useState(false);
+
+  // Triggering visual popup on service cards details
+  const [infoPopupService, setInfoPopupService] = useState<Service | null>(null);
+
+  // Client PDF Attachment state variables
+  const [attachedFileName, setAttachedFileName] = useState('');
+  const [attachedFileData, setAttachedFileData] = useState('');
+  const [attachedFileSize, setAttachedFileSize] = useState('');
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [uploadProgresses, setUploadProgresses] = useState<{ [filename: string]: { progress: number; size: string } }>({});
+  const [selectedViewBooking, setSelectedViewBooking] = useState<BookingRequest | null>(null);
+  const [previewFile, setPreviewFile] = useState<{ name: string; data: string; size: string } | null>(null);
+
+  // Service management filtering & sorting state
+  const [servicesSearchQuery, setServicesSearchQuery] = useState('');
+  const [servicesFilterCategory, setServicesFilterCategory] = useState<string>('all');
+  const [servicesSortKey, setServicesSortKey] = useState<'name-asc' | 'name-desc' | 'total-asc' | 'total-desc'>('name-asc');
+  const [visibleServicesCount, setVisibleServicesCount] = useState<number>(10);
+
+  // Welcome Message States
+  const [welcomeMessage, setWelcomeMessage] = useState<string>(() => {
+    return localStorage.getItem('sm_welcome_msg') || 'أهلاً ومرحباً بكم في منصة مكتب سما المملكة للخدمات المتكاملة وتخليص المعاملات الإلكترونية الحكومية. نسعد بخدمتكم وتخليص كافة معاملاتكم بكل دقة وأمان وسرعة بإشراف نخبة من المختصين والمهنيين.';
+  });
+  const [welcomeEditor, setWelcomeEditor] = useState<string>(() => {
+    return localStorage.getItem('sm_welcome_msg') || 'أهلاً ومرحباً بكم في منصة مكتب سما المملكة للخدمات المتكاملة وتخليص المعاملات الإلكترونية الحكومية. نسعد بخدمتكم وتخليص كافة معاملاتكم بكل دقة وأمان وسرعة بإشراف نخبة من المختصين والمهنيين.';
+  });
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
+
+  // Customizable Status Update messages for bookings
+  const [statusMsgPending, setStatusMsgPending] = useState<string>(() => {
+    return localStorage.getItem('sm_status_msg_pending') || 'قيد الانتظار لمراجعة الإدارة - نعتز بثقتكم وسنتولى معالجتها حالاً.';
+  });
+  const [statusMsgProcessing, setStatusMsgProcessing] = useState<string>(() => {
+    return localStorage.getItem('sm_status_msg_processing') || 'تحت المعالجة الإجرائية الآن - يتم تنفيذ المعاملة ومراجعة الجهات المختصة.';
+  });
+  const [statusMsgCompleted, setStatusMsgCompleted] = useState<string>(() => {
+    return localStorage.getItem('sm_status_msg_completed') || 'مكتملة ومستند الفاتورة جاهز - نسعد دائماً برضاكم التام.';
+  });
+  const [statusMsgCancelled, setStatusMsgCancelled] = useState<string>(() => {
+    return localStorage.getItem('sm_status_msg_cancelled') || 'ملغية - نرجو التواصل مع الإدارة للاستفسار والتحقق.';
+  });
+  const [saveSuccessStatusMsg, setSaveSuccessStatusMsg] = useState(false);
+
+  // Social Media Links States
+  const [socialTwitter, setSocialTwitter] = useState<string>(() => {
+    return localStorage.getItem('sm_social_twitter') || 'https://x.com/sama_kingdom';
+  });
+  const [socialFacebook, setSocialFacebook] = useState<string>(() => {
+    return localStorage.getItem('sm_social_facebook') || 'https://facebook.com/sama_kingdom';
+  });
+  const [socialInstagram, setSocialInstagram] = useState<string>(() => {
+    return localStorage.getItem('sm_social_instagram') || 'https://instagram.com/sama_kingdom';
+  });
+  const [socialLinkedin, setSocialLinkedin] = useState<string>(() => {
+    return localStorage.getItem('sm_social_linkedin') || 'https://linkedin.com/company/sama_kingdom';
+  });
+  const [socialSnapchat, setSocialSnapchat] = useState<string>(() => {
+    return localStorage.getItem('sm_social_snapchat') || 'https://snapchat.com/add/sama_kingdom';
+  });
+  const [socialYoutube, setSocialYoutube] = useState<string>(() => {
+    return localStorage.getItem('sm_social_youtube') || 'https://youtube.com/@sama_kingdom';
+  });
+  const [socialWhatsapp, setSocialWhatsapp] = useState<string>(() => {
+    return localStorage.getItem('sm_social_whatsapp') || 'https://wa.me/966500000000';
+  });
+  const [saveSuccessSocialMedia, setSaveSuccessSocialMedia] = useState(false);
+
+  // WhatsApp Integration states and customizable templates
+  const [whatsappTemplateCompleted, setWhatsappTemplateCompleted] = useState<string>(() => {
+    return localStorage.getItem('sm_wa_template_completed') || 'السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {name} المحترم. يسعدنا إبلاغكم بأن معاملتكم لطلب ({service}) قد اكتملت بنجاح ومستند الفاتورة جاهز. شكراً لثقتكم بمكتب سما المملكة للخدمات المتكاملة.';
+  });
+  const [whatsappTemplateCancelled, setWhatsappTemplateCancelled] = useState<string>(() => {
+    return localStorage.getItem('sm_wa_template_cancelled') || 'السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {name} المحترم. نود إبلاغكم بأنه تم إلغاء معاملتكم رقم {bookingId} لطلب ({service}). لمزيد من الاستفسارات يرجى الاتصال بإدارة المكتب. شكراً لتفهمكم.';
+  });
+  const [whatsappTemplateProcessing, setWhatsappTemplateProcessing] = useState<string>(() => {
+    return localStorage.getItem('sm_wa_template_processing') || 'السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. نود إبلاغكم بأن طلبكم رقم {bookingId} لمعاملة ({serviceName}) هو الآن قيد المعالجة الإجرائية من قبل فريق المراجعة والجهات المختصة. سنوافيكم بالتطورات قريباً.';
+  });
+  const [whatsappTemplatePending, setWhatsappTemplatePending] = useState<string>(() => {
+    return localStorage.getItem('sm_wa_template_pending') || 'السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. تم استلام طلبكم رقم {bookingId} لمعاملة ({serviceName}) بنجاح. وهو قيد الانتظار حالياً للمراجعة والتدقيق الإداري. شكراً لثقتكم بمكتب سما المملكة.';
+  });
+  const [whatsappLogs, setWhatsappLogs] = useState<WhatsAppLog[]>(() => {
+    const saved = localStorage.getItem('sm_wa_logs');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [waToast, setWaToast] = useState<{ show: boolean; type: 'loading' | 'success' | 'error'; message: string; details: string } | null>(null);
+  const [saveSuccessWaTemplate, setSaveSuccessWaTemplate] = useState(false);
+
+  // WhatsApp testing and simulation state
+  const [testConsoleBookingId, setTestConsoleBookingId] = useState<string>('');
+  const [testConsoleTemplateType, setTestConsoleTemplateType] = useState<'pending' | 'processing' | 'completed' | 'cancelled'>('completed');
+  const [testConsoleIsDispatching, setTestConsoleIsDispatching] = useState(false);
+
+  useEffect(() => {
+    if (bookings.length > 0 && !testConsoleBookingId) {
+      setTestConsoleBookingId(bookings[0].id);
+    }
+  }, [bookings]);
+
+  // Background selection strategy: 'ai' | 'sunrise' | 'sunset' | 'night'
+  const [bgStrategy, setBgStrategy] = useState<'ai' | 'sunrise' | 'sunset' | 'night'>('ai');
+
+  // New state to toggle whether the floating widget is visible or collapsed
+  const [showBgSelector, setShowBgSelector] = useState<boolean>(() => {
+    return localStorage.getItem('sm_show_bg_selector') !== 'false';
+  });
+  const [isBgSelectorCollapsed, setIsBgSelectorCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('sm_bg_selector_collapsed') !== 'false'; // Defaults to true (collapsed/small)
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sm_show_bg_selector', String(showBgSelector));
+  }, [showBgSelector]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_bg_selector_collapsed', String(isBgSelectorCollapsed));
+  }, [isBgSelectorCollapsed]);
+
+  const makkahImages = {
+    sunrise: makkahSunriseImg,
+    sunset: makkahSunsetImg,
+    night: makkahNightImg,
+  };
+
+  const getActiveMakkahImg = () => {
+    if (bgStrategy !== 'ai') {
+      return makkahImages[bgStrategy];
+    }
+    // AI Intelligent Strategy: Determine based on local client hour!
+    const clientHour = new Date().getHours();
+    if (clientHour >= 5 && clientHour < 16) {
+      return makkahImages.sunrise; // Day / Sunrise (5 AM to 4 PM)
+    } else if (clientHour >= 16 && clientHour < 20) {
+      return makkahImages.sunset; // Twilight / Sunset (4 PM to 8 PM)
+    } else {
+      return makkahImages.night; // Midnight / Stars (8 PM to 5 AM)
+    }
+  };
+
+  const getBgNameAr = (strategy: string) => {
+    switch (strategy) {
+      case 'sunrise': return 'مظهر شروق مكة (الصباح)';
+      case 'sunset': return 'مظهر غروب مكة (الأصيل)';
+      case 'night': return 'مظهر ليل مكة (التهجد)';
+      case 'ai': 
+      default: {
+        const hr = new Date().getHours();
+        if (hr >= 5 && hr < 16) return 'الذكاء الاصطناعي (شروق مكة الآن)';
+        if (hr >= 16 && hr < 20) return 'الذكاء الاصطناعي (غروب مكة الآن)';
+        return 'الذكاء الاصطناعي (ليل مكة الآن)';
+      }
+    }
+  };
+
+  // Local persistence triggers
+  useEffect(() => {
+    localStorage.setItem('sm_bg_strategy', bgStrategy);
+  }, [bgStrategy]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_services', JSON.stringify(services));
+  }, [services]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_transactions', JSON.stringify(transactions));
+  }, [transactions]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_bookings', JSON.stringify(bookings));
+  }, [bookings]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_welcome_msg', welcomeMessage);
+  }, [welcomeMessage]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_status_msg_pending', statusMsgPending);
+  }, [statusMsgPending]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_status_msg_processing', statusMsgProcessing);
+  }, [statusMsgProcessing]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_status_msg_completed', statusMsgCompleted);
+  }, [statusMsgCompleted]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_status_msg_cancelled', statusMsgCancelled);
+  }, [statusMsgCancelled]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_twitter', socialTwitter);
+  }, [socialTwitter]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_facebook', socialFacebook);
+  }, [socialFacebook]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_instagram', socialInstagram);
+  }, [socialInstagram]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_linkedin', socialLinkedin);
+  }, [socialLinkedin]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_snapchat', socialSnapchat);
+  }, [socialSnapchat]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_youtube', socialYoutube);
+  }, [socialYoutube]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_social_whatsapp', socialWhatsapp);
+  }, [socialWhatsapp]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_wa_template_completed', whatsappTemplateCompleted);
+  }, [whatsappTemplateCompleted]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_wa_template_cancelled', whatsappTemplateCancelled);
+  }, [whatsappTemplateCancelled]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_wa_template_processing', whatsappTemplateProcessing);
+  }, [whatsappTemplateProcessing]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_wa_template_pending', whatsappTemplatePending);
+  }, [whatsappTemplatePending]);
+
+  useEffect(() => {
+    localStorage.setItem('sm_wa_logs', JSON.stringify(whatsappLogs));
+  }, [whatsappLogs]);
+
+  // Handle standard dynamic service standard changes when selected in admin form
+  const handleAdminServiceSelectChange = (srvId: string) => {
+    setTxServiceId(srvId);
+    const selected = services.find(s => s.id === srvId);
+    if (selected) {
+      setTxGovFee(selected.govFee);
+      setTxOfficeFee(selected.officeFee);
+    }
+  };
+
+  // Maps custom system icons from standard catalog by accepting properties as a React component
+  const RenderServiceIcon = ({ iconName, className }: { iconName: string; className?: string }) => {
+    // Dynamically retrieve the component from standard Lucide namespace
+    const IconComponent = (LucideIcons as any)[iconName] || LucideIcons.FileText;
+    return <IconComponent className={className || "w-6 h-6 text-amber-600"} />;
+  };
+
+  // Backwards compatible wrapper for simple functional calls
+  const renderServiceIcon = (iconName: string, className?: string) => {
+    return <RenderServiceIcon iconName={iconName} className={className} />;
+  };
+
+  // --- SUBMISSIONS HANDLERS ---
+  
+  // Handle individual file processing with simulated progress indicators
+  const processUploadFile = (file: File) => {
+    if (file.type !== 'application/pdf') {
+      alert(`عذراً، المستند "${file.name}" ليس بصيغة PDF. يرجى إرفاق مستندات بصيغة PDF فقط لضمان توافق النظام وسهولة المعالجة.`);
+      return;
+    }
+
+    // Limit to 4MB for high reliability in local state/storage
+    if (file.size > 4 * 1024 * 1024) {
+      alert(`عذراً، حجم المستند "${file.name}" كبير للغاية. يرجى إرفاق ملف PDF بحجم لا يتجاوز 4 ميجابايت.`);
+      return;
+    }
+
+    const kb = file.size / 1024;
+    const formattedSize = kb > 1024 
+      ? `${(kb / 1024).toFixed(2)} MB` 
+      : `${kb.toFixed(1)} KB`;
+
+    // Initialize progress tracking for this file
+    setUploadProgresses(prev => ({
+      ...prev,
+      [file.name]: { progress: 0, size: formattedSize }
+    }));
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const resultData = event.target?.result as string;
+      if (!resultData) return;
+
+      // Simulate step-by-step progress tracking for high-fidelity interactive feedback
+      let currentProgress = 0;
+      const interval = setInterval(() => {
+        currentProgress += Math.floor(Math.random() * 15) + 12;
+        if (currentProgress >= 100) {
+          currentProgress = 100;
+          clearInterval(interval);
+          
+          // Add to attachedFiles array
+          setAttachedFiles(prev => {
+            if (prev.some(f => f.name === file.name)) return prev;
+            return [...prev, { name: file.name, data: resultData, size: formattedSize }];
+          });
+
+          // Smooth fade out of individual progress trackers after complete
+          setTimeout(() => {
+            setUploadProgresses(prev => {
+              const copy = { ...prev };
+              delete copy[file.name];
+              return copy;
+            });
+          }, 850);
+        }
+
+        setUploadProgresses(prev => {
+          if (!prev[file.name]) return prev;
+          return {
+            ...prev,
+            [file.name]: { ...prev[file.name], progress: currentProgress }
+          };
+        });
+      }, 90);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handle client PDF attachment upload
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      processUploadFile(files[i]);
+    }
+
+    e.target.value = ''; // Reset input to allow duplicate selection
+  };
+  
+  // Submit Customer booking from public site
+  const handleClientBookingSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientName.trim() || !clientPhone.trim() || !selectedServiceId) {
+      setSubmissionFeedback({ success: false, msg: 'يرجى تعبئة كافة الخانات المطلوبة بالكامل.' });
+      return;
+    }
+
+    const matchedService = services.find(s => s.id === selectedServiceId);
+    if (!matchedService) return;
+
+    const newBooking: BookingRequest = {
+      id: `bk-${Date.now()}`,
+      clientName: clientName.trim(),
+      phoneNumber: clientPhone.trim(),
+      serviceId: selectedServiceId,
+      serviceName: matchedService.name,
+      status: 'pending',
+      notes: clientNotes.trim(),
+      date: new Date().toISOString(),
+      attachedFileName: attachedFiles[0] ? attachedFiles[0].name : undefined,
+      attachedFileData: attachedFiles[0] ? attachedFiles[0].data : undefined,
+      attachedFileSize: attachedFiles[0] ? attachedFiles[0].size : undefined,
+      attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined
+    };
+
+    const updatedBookings = [newBooking, ...bookings];
+    setBookings(updatedBookings);
+
+    setSubmissionFeedback({ 
+      success: true, 
+      msg: `تم إرسال طلبك بنجاح لمكتب سما المملكة الرقم المرجعي: ${newBooking.id.substring(3)}` 
+    });
+
+    // Reset fields
+    setClientName('');
+    setClientPhone('');
+    setClientNotes('');
+    setSelectedServiceId('');
+    setAttachedFileName('');
+    setAttachedFileData('');
+    setAttachedFileSize('');
+    setAttachedFiles([]);
+    setUploadProgresses({});
+
+    // Pre-populate track inquiry immediately for customer's ease
+    setSearchPhone(clientPhone.trim());
+  };
+
+  // Client Request status lookup
+  const handleTrackPhoneNumberLookup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchPhone.trim()) return;
+
+    const results = bookings.filter(b => b.phoneNumber.replace(/\s+/g, '') === searchPhone.trim().replace(/\s+/g, ''));
+    setTrackedRequests(results);
+    setHasSearched(true);
+  };
+
+  // Adding transaction ledger directly via Admin
+  const handleAddTransactionSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!txClientName.trim()) {
+      alert('يرجى كتابة اسم العميل أولاً.');
+      return;
+    }
+
+    const matchedService = services.find(s => s.id === txServiceId);
+    const serviceName = matchedService ? matchedService.name : 'خدمة مخصصة';
+
+    const calculatedTax = txOfficeFee * 0.15;
+    const finalTotal = txGovFee + txOfficeFee + calculatedTax;
+
+    const invoiceCode = `SM-${new Date().getFullYear().toString().substring(2)}${(new Date().getMonth() + 1).toString().padStart(2, '0')}-${(transactions.length + 1).toString().padStart(3, '0')}`;
+
+    const newTx: Transaction = {
+      id: `tx-${Date.now()}`,
+      clientName: txClientName.trim(),
+      serviceName: serviceName,
+      govFee: txGovFee,
+      officeFee: txOfficeFee,
+      tax: calculatedTax,
+      total: finalTotal,
+      date: new Date().toISOString(),
+      invoiceNumber: invoiceCode,
+      notes: txNotes.trim()
+    };
+
+    setTransactions([newTx, ...transactions]);
+
+    // Cleanup inputs
+    setTxClientName('');
+    setTxNotes('');
+    
+    // reset to original service parameters
+    if (services.length > 0) {
+      setTxServiceId(services[0].id);
+      setTxGovFee(services[0].govFee);
+      setTxOfficeFee(services[0].officeFee);
+    }
+
+    alert('تم حفظ القيد المالي وترحيله للفاتورة الضريبية بنجاح!');
+  };
+
+  // Pre-fill administrative transaction creation using a customer request
+  const handlePreFillTransactionFromBooking = (booking: BookingRequest) => {
+    setTxClientName(booking.clientName);
+    const svc = services.find(s => s.id === booking.serviceId) || services.find(s => s.name === booking.serviceName);
+    if (svc) {
+      setTxServiceId(svc.id);
+      setTxGovFee(svc.govFee);
+      setTxOfficeFee(svc.officeFee);
+    } else {
+      setTxGovFee(0);
+      setTxOfficeFee(200);
+    }
+    setTxNotes(`مرحل تلقائياً من طلب العميل برقم الجوال: ${booking.phoneNumber} والملاحظات الكلوية مسبقاً: ${booking.notes}`);
+    
+    // Switch to active financial ledger
+    setAdminTab('ledger');
+  };
+
+  // Add Dynamic Service
+  const handleAddServiceSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSrvName.trim() || !newSrvDesc.trim()) {
+      alert('يرجى ملء اسم الخدمة ووصفها بشكل صحيح.');
+      return;
+    }
+
+    const newSrv: Service = {
+      id: `srv-${Date.now()}`,
+      name: newSrvName.trim(),
+      description: newSrvDesc.trim(),
+      govFee: Number(newSrvGovFee) || 0,
+      officeFee: Number(newSrvOfficeFee) || 0,
+      category: newSrvCategory,
+      icon: newSrvIcon,
+      additionalFees: newSrvAdditionalFees
+    };
+
+    setServices([...services, newSrv]);
+
+    // reset fields
+    setNewSrvName('');
+    setNewSrvDesc('');
+    setNewSrvGovFee(0);
+    setNewSrvOfficeFee(0);
+    setIconSearchNew('');
+    setNewSrvAdditionalFees([]);
+    setTempFeeNameNew('');
+    setTempFeeAmountNew('');
+
+    alert('تمت إضافة الخدمة الجديدة بنجاح للمكتب!');
+  };
+
+  // Edit Dynamic Service and Prices
+  const handleUpdateServiceSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingService || !editingService.name.trim() || !editingService.description.trim()) {
+      alert('يرجى ملء كافة الخانات المطلوبة بشكل صحيح.');
+      return;
+    }
+
+    const updated = services.map(s => {
+      if (s.id === editingService.id) {
+        return editingService;
+      }
+      return s;
+    });
+
+    setServices(updated);
+    setEditingService(null);
+    alert('تم حفظ وتعديل أسعار وبنود الخدمة بنجاح!');
+  };
+
+  // Admin Request status updates with automatic WhatsApp notifications
+  const handleUpdateBookingStatus = async (bookingId: string, status: 'pending' | 'processing' | 'completed' | 'cancelled') => {
+    const targetBooking = bookings.find(b => b.id === bookingId);
+    if (!targetBooking) return;
+
+    const oldStatus = targetBooking.status;
+
+    const updated = bookings.map(b => {
+      if (b.id === bookingId) {
+        return { ...b, status: status };
+      }
+      return b;
+    });
+    setBookings(updated);
+
+    // If the status has changed
+    if (oldStatus !== status) {
+      let template = '';
+      let statusAr = '';
+      if (status === 'completed') {
+        template = whatsappTemplateCompleted;
+        statusAr = 'مكتملة ومستحقة الدفع';
+      } else if (status === 'cancelled') {
+        template = whatsappTemplateCancelled;
+        statusAr = 'ملغية ومسحوبة';
+      } else if (status === 'processing') {
+        template = whatsappTemplateProcessing;
+        statusAr = 'تحت المعالجة الإجرائية من قبل فريق المراجعين';
+      } else if (status === 'pending') {
+        template = whatsappTemplatePending;
+        statusAr = 'قيد المراجعة والتدقيق الإداري والمحاسبي';
+      }
+
+      if (template) {
+        const formattedMessage = template
+          .replace(/{name}/g, targetBooking.clientName)
+          .replace(/{clientName}/g, targetBooking.clientName)
+          .replace(/{service}/g, targetBooking.serviceName)
+          .replace(/{serviceName}/g, targetBooking.serviceName)
+          .replace(/{status}/g, statusAr)
+          .replace(/{phone}/g, targetBooking.phoneNumber)
+          .replace(/{bookingId}/g, bookingId);
+
+        // Trigger temporary visual notification feedback
+        setWaToast({
+          show: true,
+          type: 'loading',
+          message: `جاري إرسال إشعار WhatsApp تلقائي إلى ${targetBooking.clientName}...`,
+          details: formattedMessage
+        });
+
+      // Call API
+      const result = await sendPlaceholderWhatsAppAPI(targetBooking.phoneNumber, formattedMessage);
+
+      // Create Transmission Log
+      const newLog: WhatsAppLog = {
+        id: `wa-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        bookingId: bookingId,
+        clientName: targetBooking.clientName,
+        phoneNumber: targetBooking.phoneNumber,
+        serviceName: targetBooking.serviceName,
+        status: status,
+        message: formattedMessage,
+        sentAt: new Date().toISOString(),
+        success: result.success,
+        apiResponse: result.apiResponse
+      };
+
+      setWhatsappLogs(prev => [newLog, ...prev]);
+
+      if (result.success) {
+        setWaToast({
+          show: true,
+          type: 'success',
+          message: `تم إرسال إشعار WhatsApp تلقائي بالنجاح للأخ ${targetBooking.clientName}!`,
+          details: formattedMessage
+        });
+      } else {
+        setWaToast({
+          show: true,
+          type: 'error',
+          message: `تعذر إرسال الإشعار للعميل: ${result.apiResponse}`,
+          details: formattedMessage
+        });
+      }
+
+      // Automatically auto-close feedback toast in 7 seconds
+      setTimeout(() => {
+        setWaToast(prev => {
+          if (prev && (prev.message.includes(targetBooking.clientName) || prev.type === 'error')) {
+            return { ...prev, show: false };
+          }
+          return prev;
+        });
+      }, 7000);
+      }
+    }
+  };
+
+  // Manual Trigger for WhatsApp Dynamic Testing Console
+  const handleManualTestWaDispatch = async () => {
+    const target = bookings.find(b => b.id === testConsoleBookingId);
+    if (!target) {
+      alert('يرجى تحديد معاملة نشطة من القائمة المنسدلة أولاً.');
+      return;
+    }
+
+    setTestConsoleIsDispatching(true);
+
+    let template = '';
+    let statusAr = '';
+    if (testConsoleTemplateType === 'completed') {
+      template = whatsappTemplateCompleted;
+      statusAr = 'مكتملة ومستحقة الدفع';
+    } else if (testConsoleTemplateType === 'cancelled') {
+      template = whatsappTemplateCancelled;
+      statusAr = 'ملغية ومسحوبة';
+    } else if (testConsoleTemplateType === 'processing') {
+      template = whatsappTemplateProcessing;
+      statusAr = 'تحت المعالجة الإجرائية من قبل فريق المراجعين';
+    } else if (testConsoleTemplateType === 'pending') {
+      template = whatsappTemplatePending;
+      statusAr = 'قيد المراجعة والتدقيق الإداري والمحاسبي';
+    }
+
+    const formattedMessage = template
+      .replace(/{name}/g, target.clientName)
+      .replace(/{clientName}/g, target.clientName)
+      .replace(/{service}/g, target.serviceName)
+      .replace(/{serviceName}/g, target.serviceName)
+      .replace(/{status}/g, statusAr)
+      .replace(/{phone}/g, target.phoneNumber)
+      .replace(/{bookingId}/g, target.id);
+
+    const result = await sendPlaceholderWhatsAppAPI(target.phoneNumber, formattedMessage);
+
+    const newLog: WhatsAppLog = {
+      id: `wa-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      bookingId: target.id,
+      clientName: target.clientName,
+      phoneNumber: target.phoneNumber,
+      serviceName: target.serviceName,
+      status: testConsoleTemplateType,
+      message: formattedMessage,
+      sentAt: new Date().toISOString(),
+      success: result.success,
+      apiResponse: result.apiResponse
+    };
+
+    setWhatsappLogs(prev => [newLog, ...prev]);
+    setTestConsoleIsDispatching(false);
+
+    setWaToast({
+      show: true,
+      type: result.success ? 'success' : 'error',
+      message: result.success 
+        ? `[إرسال تجريبي] تم بث رسالة WhatsApp تلقائية بنجاح للمستفيد ${target.clientName}!`
+        : `[فشل تجريبي] تعذر بث الإشعار للعميل: ${result.apiResponse}`,
+      details: formattedMessage
+    });
+
+    setTimeout(() => {
+      setWaToast(prev => {
+        if (prev && prev.message.includes('[إرسال تجريبي]')) {
+          return { ...prev, show: false };
+        }
+        return prev;
+      });
+    }, 7000);
+  };
+
+  // Link booking directly to a service in the service directory
+  const handleUpdateBookingService = (bookingId: string, serviceId: string) => {
+    const srv = services.find(s => s.id === serviceId);
+    if (!srv) return;
+    const updated = bookings.map(b => {
+      if (b.id === bookingId) {
+        return { ...b, serviceId: serviceId, serviceName: srv.name };
+      }
+      return b;
+    });
+    setBookings(updated);
+  };
+
+  // Delete transaction safely
+  const handleDeleteTransaction = (txId: string) => {
+    if (window.confirm('هل أنت متأكد من رغبتك في حذف هذا القيد المالي بشكل نهائي؟')) {
+      const filtered = transactions.filter(t => t.id !== txId);
+      setTransactions(filtered);
+    }
+  };
+
+  // Delete Service safely
+  const handleDeleteService = (srvId: string) => {
+    const srv = services.find(s => s.id === srvId);
+    if (!srv) return;
+    
+    if (services.length <= 1) {
+      setShowCannotDeleteAlert(true);
+      return;
+    }
+    setServiceToDeleteCheck(srv);
+  };
+
+  const confirmDeleteService = () => {
+    if (serviceToDeleteCheck) {
+      const filtered = services.filter(s => s.id !== serviceToDeleteCheck.id);
+      setServices(filtered);
+      setServiceToDeleteCheck(null);
+    }
+  };
+
+  // Handling navigation tabs
+  const handleTabClick = (tab: 'home' | 'track' | 'admin') => {
+    if (tab === 'admin') {
+      if (isAdminAuthenticated) {
+        setActiveTab('admin');
+      } else {
+        setShowPasscode(true);
+      }
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
+  const handleAdminAuthSuccess = () => {
+    setIsAdminAuthenticated(true);
+    sessionStorage.setItem('sm_admin_logged', 'true');
+    setShowPasscode(false);
+    setActiveTab('admin');
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    sessionStorage.removeItem('sm_admin_logged');
+    setActiveTab('home');
+  };
+
+  // --- FINANCIAL CALC COMBINED ---
+  const totalGovSpent = transactions.reduce((sum, t) => sum + t.govFee, 0);
+  const totalOfficeRevenues = transactions.reduce((sum, t) => sum + t.officeFee, 0);
+  const totalVATCollected = transactions.reduce((sum, t) => sum + t.tax, 0);
+  const totalOverallAccountingVolume = totalGovSpent + totalOfficeRevenues + totalVATCollected;
+
+  return (
+    <div 
+      className="min-h-screen bg-slate-100 bg-cover bg-center bg-no-repeat bg-fixed transition-all duration-500"
+      dir={lang === 'en' ? 'ltr' : 'rtl'}
+      style={{ 
+        fontFamily: lang === 'en' ? '"Inter", system-ui, sans-serif' : '"Tajawal", system-ui, sans-serif',
+        backgroundImage: `linear-gradient(rgba(243, 244, 246, 0.94), rgba(243, 244, 246, 0.94)), url("${getActiveMakkahImg()}")`,
+      }}
+    >
+      
+      {/* Top Main Nav */}
+      <nav className="bg-slate-900 border-b border-slate-950 text-white shadow-lg sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16 items-center">
+            
+            {/* Logo brand */}
+            <div className="flex items-center gap-3">
+              <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-amber-500/30 flex-shrink-0 bg-slate-950 shadow-md">
+                <img 
+                  src={samaLogoImg} 
+                  alt={t('appName')} 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div>
+                <span className="font-extrabold text-xl tracking-tight text-amber-500">{t('appName')}</span>
+                <span className="hidden sm:inline-block mr-2 text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-750">{t('appSubtitle')}</span>
+              </div>
+            </div>
+
+            {/* Nav tabs desktop */}
+            <div className="flex items-center gap-2 sm:gap-4">
+              <button 
+                onClick={() => handleTabClick('home')}
+                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'home' ? 'bg-amber-600 text-slate-950 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+              >
+                <Home className="w-4 h-4" />
+                <span>{t('home')}</span>
+              </button>
+
+              <button 
+                onClick={() => handleTabClick('track')}
+                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'track' ? 'bg-amber-600 text-slate-950 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+              >
+                <Search className="w-4 h-4" />
+                <span>{t('track')}</span>
+              </button>
+
+              <button 
+                onClick={() => handleTabClick('admin')}
+                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'admin' ? 'bg-slate-200 text-slate-950 shadow-md' : 'bg-slate-800 border border-slate-700 text-amber-500 hover:bg-slate-700'}`}
+              >
+                <Lock className="w-4 h-4" />
+                <span>{t('adminPanel')}</span>
+              </button>
+
+              {/* Bilingual Language Switcher Toggle */}
+              <button 
+                onClick={toggleLanguage}
+                className="px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1 bg-slate-800 text-amber-400 hover:text-white hover:bg-slate-700 border border-amber-500/20 hover:border-amber-500/50 cursor-pointer shadow-sm select-none"
+                title={lang === 'ar' ? 'Switch to English' : 'التحويل إلى اللغة العربية'}
+              >
+                <Globe className="w-3.5 h-3.5 text-amber-500" />
+                <span className="font-sans font-bold">{lang === 'ar' ? 'English' : 'عربي'}</span>
+              </button>
+
+              {isAdminAuthenticated && activeTab === 'admin' && (
+                <button 
+                  onClick={handleAdminLogout}
+                  title="تسجيل الخروج من الإدارة"
+                  className="p-1.5 bg-red-900/40 text-red-300 hover:text-white rounded border border-red-800/60 hover:bg-red-900 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* BANNER CLOCK & SYSTEM STATE */}
+      <div className="bg-slate-950 text-slate-400 py-2 border-b border-slate-800 text-center text-xs font-mono select-none px-4">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-1 text-[11px]">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-slate-300 font-sans font-medium">{t('heroSubtitle')}</span>
+          </div>
+          <div className="flex items-center gap-4 text-slate-400">
+            <span>{t('localTimePrefix')} <strong className="text-slate-200">2026-05-19</strong></span>
+            <span className="hidden sm:inline">|</span>
+            <span>{t('currentUserPrefix')} <strong className="text-amber-500">essam77142@gmail.com</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* MAIN CONTAINER CONTENT VIEW */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* ==================== TAB 1: CLIENT HOME PORTAL ==================== */}
+        {activeTab === 'home' && (
+          <div className="space-y-12">
+            
+            {/* Elegant Saudi Pattern Hero */}
+            <div 
+              className="bg-slate-900 text-white rounded-2xl overflow-hidden shadow-2xl relative border border-slate-850 bg-cover bg-center transition-all duration-500" 
+              style={{ backgroundImage: `linear-gradient(to left, rgba(15, 23, 42, 0.96) 45%, rgba(15, 23, 42, 0.7) 80%, rgba(15, 23, 42, 0.3)), url("${getActiveMakkahImg()}")` }}
+            >
+              {/* Abs decoration backdrop line */}
+              <div className="absolute top-0 right-0 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl -z-10"></div>
+              <div className="absolute bottom-0 left-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl -z-10"></div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center p-8 md:p-12">
+                {/* Right Side: Welcome text and info - occupies 7 cols on lg */}
+                <div className="lg:col-span-7 flex flex-col justify-center text-center md:text-right">
+                  <div className="inline-flex items-center gap-2 bg-amber-500/10 text-amber-500 px-3 py-1 rounded-full text-xs font-bold border border-amber-500/20 mb-4 self-center md:self-start">
+                    <Activity className="w-3.5 h-3.5 animate-pulse" />
+                    <span>{t('portalTitleDefault')}</span>
+                  </div>
+                  <h1 className="text-3xl md:text-5xl font-black mb-4 leading-normal text-slate-100 font-sans">
+                    {lang === 'en' ? (
+                      <>We Process Your Transactions with Complete <span className="text-amber-500 underline decoration-wavy decoration-amber-500/40">Trust & Efficiency</span></>
+                    ) : (
+                      <>ننجز معاملاتك بكل <span className="text-amber-500 underline decoration-wavy decoration-amber-500/40">ثقة وكفاءة</span></>
+                    )}
+                  </h1>
+                  
+                  <div className="bg-slate-950/80 backdrop-blur-md rounded-2xl p-5 border border-amber-500/30 text-right max-w-3xl mb-8 shadow-2xl relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-1.5 h-full bg-amber-500"></div>
+                    <div className="flex items-center gap-2 text-amber-500 font-extrabold text-xs mb-2 bg-amber-500/10 w-fit px-2.5 py-1 rounded-md border border-amber-500/20">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                      <span>{lang === 'en' ? 'Official Welcome Statement for Visitors & Clients' : 'البيان الترحيبي الخاص بالزوار والعملاء'}</span>
+                    </div>
+                    <p className={`text-xs md:text-sm text-slate-100 leading-relaxed font-sans whitespace-pre-wrap ${lang === 'en' ? 'text-left' : 'text-right'}`}>
+                      {getWelcomeText()}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3 justify-start">
+                    <a 
+                      href="#booking-anchor" 
+                      className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold px-8 py-3.5 rounded-lg text-center transition-all shadow-lg hover:shadow-amber-600/20 text-sm"
+                    >
+                      {lang === 'en' ? 'Request Your Service Now' : 'اطلب خدمتك الآن'}
+                    </a>
+                    <button 
+                      onClick={() => handleTabClick('track')}
+                      className="bg-slate-800 hover:bg-slate-750 hover:text-white text-slate-200 font-bold px-8 py-3.5 rounded-lg text-center transition-all text-sm border border-slate-700"
+                    >
+                      {lang === 'en' ? 'Direct Status Inquiry & Track Requests' : 'الاستعلام المباشر عن حالة المعاملة'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Left Side: Outstanding Royal Logo with customized premium background - occupies 5 cols on lg */}
+                <div className="lg:col-span-5 flex flex-col items-center justify-center">
+                  <div className="relative group w-64 h-64 md:w-72 md:h-72 rounded-3xl overflow-hidden shadow-2xl border-2 border-amber-500/40 bg-slate-950 flex items-center justify-center transition-all duration-500 hover:border-amber-400 hover:scale-102">
+                    
+                    {/* Glowing backlight */}
+                    <div className="absolute -inset-1 bg-gradient-to-tr from-amber-600 to-indigo-600 rounded-3xl blur opacity-30 group-hover:opacity-40 transition-opacity duration-500"></div>
+                    
+                    {/* Dynamic overlay reflection */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent opacity-80 z-10"></div>
+                    
+                    {/* The Actual Luxury Logo Image */}
+                    <img 
+                      src={samaLogoImg} 
+                      alt="شعار مكتب سما المملكة" 
+                      className="w-full h-full object-cover relative z-0"
+                      referrerPolicy="no-referrer"
+                    />
+
+                    {/* Logo Info Overlay */}
+                    <div className="absolute bottom-4 inset-x-4 z-20 text-center space-y-1">
+                      <h3 className="text-amber-400 font-black text-sm tracking-wide drop-shadow-md">مكتب سما المملكة</h3>
+                      <p className="text-slate-300 text-[9px] drop-shadow-sm font-sans">الخدمات المتكاملة وتخليص المعاملات الحكومية</p>
+                    </div>
+
+                    {/* Live indicator badge */}
+                    <span className="absolute top-3 left-3 z-25 bg-amber-500 text-slate-950 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-400 animate-pulse uppercase tracking-wider font-sans">
+                      المكتب الرقمي الموثق
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* SOCIAL MEDIA QUICK CONNECT STRIP */}
+            <div className="bg-white/85 backdrop-blur-md rounded-2xl p-5 border border-slate-205 shadow-md flex flex-col lg:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-amber-100 text-amber-700 p-2.5 rounded-xl border border-amber-200 flex-shrink-0 animate-bounce">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900 text-right">قنوات التواصل والربط الاجتماعي الرسمي للمكتب</h3>
+                  <p className="text-xs text-slate-500 font-sans text-right">يسعدنا تواصلكم وتلقي استفساراتكم وملاحظاتكم مباشرة عبر شبكاتنا المعتمدة.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-center gap-2.5">
+                {socialTwitter && (
+                  <a href={socialTwitter} target="_blank" rel="noopener noreferrer" title="منصة X / تويتر" className="flex items-center gap-1.5 px-3 py-2 bg-slate-950 text-slate-100 hover:bg-slate-900 border border-slate-900 hover:border-slate-800 rounded-xl text-xs font-bold transition-all shadow-sm">
+                    <Twitter className="w-4 h-4 text-slate-300" />
+                    <span className="hidden sm:inline">تويتر X</span>
+                  </a>
+                )}
+                {socialFacebook && (
+                  <a href={socialFacebook} target="_blank" rel="noopener noreferrer" title="فيسبوك" className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-105 hover:border-blue-200 rounded-xl text-xs font-bold transition-all shadow-sm">
+                    <Facebook className="w-4 h-4 text-blue-600" />
+                    <span className="hidden sm:inline">فيسبوك</span>
+                  </a>
+                )}
+                {socialInstagram && (
+                  <a href={socialInstagram} target="_blank" rel="noopener noreferrer" title="إنستغرام" className="flex items-center gap-1.5 px-3 py-2 bg-pink-50 text-pink-700 hover:bg-pink-100 border border-pink-105 hover:border-pink-205 rounded-xl text-xs font-bold transition-all shadow-sm font-sans">
+                    <Instagram className="w-4 h-4 text-pink-600" />
+                    <span className="hidden sm:inline">إنستغرام</span>
+                  </a>
+                )}
+                {socialLinkedin && (
+                  <a href={socialLinkedin} target="_blank" rel="noopener noreferrer" title="لينكد إن" className="flex items-center gap-1.5 px-3 py-2 bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-105 hover:border-sky-205 rounded-xl text-xs font-bold transition-all shadow-sm">
+                    <Linkedin className="w-4 h-4 text-sky-600" />
+                    <span className="hidden sm:inline">لينكد إن</span>
+                  </a>
+                )}
+                {socialYoutube && (
+                  <a href={socialYoutube} target="_blank" rel="noopener noreferrer" title="قناة يوتيوب" className="flex items-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 hover:bg-red-100 border border-red-105 hover:border-red-205 rounded-xl text-xs font-bold transition-all shadow-sm">
+                    <Youtube className="w-4 h-4 text-red-600" />
+                    <span className="hidden sm:inline">يوتيوب</span>
+                  </a>
+                )}
+                {socialSnapchat && (
+                  <a href={socialSnapchat} target="_blank" rel="noopener noreferrer" title="سناب شات" className="flex items-center gap-1.5 px-3 py-2 bg-yellow-50 text-yellow-800 hover:bg-yellow-101 border border-yellow-100 hover:border-yellow-200 rounded-xl text-xs font-bold transition-all shadow-sm font-sans">
+                    <Smartphone className="w-4 h-4 text-yellow-605" />
+                    <span className="hidden sm:inline">سناب شات</span>
+                  </a>
+                )}
+                {socialWhatsapp && (
+                  <a href={socialWhatsapp} target="_blank" rel="noopener noreferrer" title="تواصل واتساب" className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-105 hover:border-emerald-250 rounded-xl text-xs font-bold transition-all shadow-sm animate-pulse">
+                    <PhoneCall className="w-4 h-4 text-emerald-600" />
+                    <span>واتساب مباشر</span>
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* REGIONAL PUBLISHING & OPERATIONS NETWORK WIDGET */}
+            <div className="bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-2xl p-6 md:p-8 shadow-xl border border-slate-800 space-y-6 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-64 h-64 bg-amber-600/5 rounded-full blur-3xl -z-10"></div>
+              <div className="absolute bottom-0 right-0 w-64 h-64 bg-emerald-600/5 rounded-full blur-3xl -z-10"></div>
+
+              {/* Title & Badge */}
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-[10px] font-black border border-emerald-500/20 uppercase tracking-wider">
+                    <Globe className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                    <span>{lang === 'en' ? 'Verified Publishing & Service Region' : 'نطاق النشر الجغرافي والخدماتي المعتمد'}</span>
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-black text-slate-100 font-sans text-right">
+                    {lang === 'en' ? 'International Operations Scope: Asia & Africa' : 'نطاق النشر الجغرافي والأعمال: قارتي آسيا وأفريقيا'}
+                  </h2>
+                  <p className="text-slate-400 text-xs text-right max-w-3xl leading-relaxed font-sans">
+                    {lang === 'en' 
+                      ? 'Official electronic publishing and integration services of Sama Al-Mamlakah Office connecting cross-border visa systems, transit, and cargo systems across Asian and African continents directly with Saudi Arabia.'
+                      : 'منظومة النشر الرقمي لخدمات مكتب سما المملكة المعتمدة لربط وتخليص المعاملات والعمليات الدولية المباشرة للتأشيرات والخدمات عبر دول آسيا والشرق الأقصى وأفريقيا لشراكات ممتدة.'}
+                  </p>
+                </div>
+
+                {/* Switcher Tabs */}
+                <div className="flex bg-slate-950 p-1.5 rounded-xl border border-slate-800/80 w-full md:w-auto shrink-0 select-none">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRegionTab('all')}
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+                      selectedRegionTab === 'all' 
+                        ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
+                        : 'text-slate-400 hover:text-white cursor-pointer'
+                    }`}
+                  >
+                    {lang === 'en' ? 'Global View' : 'الكل المعروض'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRegionTab('asia')}
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+                      selectedRegionTab === 'asia' 
+                        ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
+                        : 'text-slate-400 hover:text-white cursor-pointer'
+                    }`}
+                  >
+                    {lang === 'en' ? 'Asia Continent' : 'قارة آسيا'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRegionTab('africa')}
+                    className={`flex-1 md:flex-none px-4 py-2 rounded-lg font-bold text-xs transition-all ${
+                      selectedRegionTab === 'africa' 
+                        ? 'bg-amber-600 text-slate-950 shadow-md cursor-pointer' 
+                        : 'text-slate-400 hover:text-white cursor-pointer'
+                    }`}
+                  >
+                    {lang === 'en' ? 'Africa Continent' : 'قارة أفريقيا'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Dynamic Grid Sections */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+                
+                {/* Active Continent Segment cards */}
+                <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* ASIA CARD */}
+                  {(selectedRegionTab === 'all' || selectedRegionTab === 'asia') && (
+                    <div className="bg-slate-950/70 p-5 rounded-xl border border-slate-800 flex flex-col justify-between hover:border-amber-500/30 transition-all group relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-16 h-16 bg-amber-500/5 rounded-bl-full pointer-events-none group-hover:bg-amber-500/10 transition-colors"></div>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-md font-bold tracking-wider font-mono">
+                            ASIA REGION
+                          </span>
+                          <div className="bg-amber-500/10 text-amber-500 p-2 rounded-lg border border-amber-500/20">
+                            <Briefcase className="w-4 h-4 text-amber-400" />
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-200 text-right group-hover:text-amber-500 transition-colors">
+                            {lang === 'en' ? 'Asia & Far East Network Hub' : 'الشبكة الآسيوية للخدمات والاستقدام'}
+                          </h3>
+                          <p className="text-slate-400 text-xs text-right mt-1.5 font-sans leading-relaxed">
+                            {lang === 'en'
+                              ? 'Comprehensive labor recruitment, commercial visitor visa processing, and air freight scheduling connecting major far-east systems directly with Saudi electronic gates.'
+                              : 'تخليص تأشيرات الاستقدام وقرارات العمل، تنسيق الطيران والحجز الدولي، ومتابعة قنوات الربط الرقمية لجميع دول الخليج وجنوب شرق آسيا والشرق الأقصى.'}
+                          </p>
+                        </div>
+                        
+                        {/* Dynamic list of cities/nodes */}
+                        <div className="pt-2">
+                          <span className="text-[10px] text-slate-500 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {['مومباي', 'مانيلا', 'جاكرتا', 'دكا', 'نيودلهي', 'كراتشي', 'كولومبو'].map(node => (
+                              <span key={node} className="text-[9px] bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-sans">
+                                {node}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-900 pt-3 mt-4 flex justify-between items-center text-[10px]">
+                        <span className="text-slate-500 font-sans">{lang === 'en' ? 'Target Audience Coverage' : 'تغطية الجمهور المستهدف'}</span>
+                        <strong className="text-amber-400 font-extrabold font-sans">+ 15,000 {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* AFRICA CARD */}
+                  {(selectedRegionTab === 'all' || selectedRegionTab === 'africa') && (
+                    <div className="bg-slate-950/70 p-5 rounded-xl border border-slate-800 flex flex-col justify-between hover:border-emerald-500/30 transition-all group relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-16 h-16 bg-emerald-500/5 rounded-bl-full pointer-events-none group-hover:bg-emerald-500/10 transition-colors"></div>
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-md font-bold tracking-wider font-mono">
+                            AFRICA REGION
+                          </span>
+                          <div className="bg-emerald-500/10 text-emerald-400 p-2 rounded-lg border border-emerald-500/20">
+                            <Truck className="w-4 h-4 text-emerald-400" />
+                          </div>
+                        </div>
+                        <div>
+                          <h3 className="font-extrabold text-sm text-slate-200 text-right group-hover:text-emerald-400 transition-colors">
+                            {lang === 'en' ? 'African Logistics & Travel Gate' : 'الشبكة الأفريقية للنقل والتأشيرات'}
+                          </h3>
+                          <p className="text-slate-400 text-xs text-right mt-1.5 font-sans leading-relaxed">
+                            {lang === 'en'
+                              ? 'Visit procedures, business visa clearances, and land/air cargo networks spanning North, East, and central Africa countries, built with unified custom routes.'
+                              : 'إنجاز موافقات تأشيرات العمل والزيارة المتبادلة، تأمين اللوجستيات البرية والبحرية، الترانزيت، والشحن الجوي لرفد التجارة وتدفق المعاملات بمرونة كاملة.'}
+                          </p>
+                        </div>
+
+                        {/* Dynamic list of cities/nodes */}
+                        <div className="pt-2">
+                          <span className="text-[10px] text-slate-500 font-bold block text-right mb-1.5 font-sans">{lang === 'en' ? 'Active Digital Nodes:' : 'محطات النشر والبوابات النشطة:'}</span>
+                          <div className="flex flex-wrap gap-1 justify-end">
+                            {['القاهرة', 'الدار البيضاء', 'الخرطوم', 'أديس أبابا', 'نيروبي', 'تونس'].map(node => (
+                              <span key={node} className="text-[9px] bg-slate-900 border border-slate-800 text-slate-300 px-2 py-0.5 rounded-md font-sans">
+                                {node}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-slate-900 pt-3 mt-4 flex justify-between items-center text-[10px]">
+                        <span className="text-slate-500 font-sans">{lang === 'en' ? 'Target Audience Coverage' : 'تغطية الجمهور المستهدف'}</span>
+                        <strong className="text-emerald-400 font-extrabold font-sans">+ 9,800 {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Telemetry Real-time network health - occupies 4 cols on lg */}
+                <div className="lg:col-span-4 bg-slate-950 p-5 rounded-xl border border-slate-800 hover:border-indigo-500/30 transition-all flex flex-col justify-between space-y-4">
+                  <div className="space-y-3">
+                    <h4 className="font-extrabold text-xs text-slate-300 uppercase tracking-widest text-right flex items-center justify-end gap-1.5 border-b border-slate-900 pb-2">
+                      <span className="inline-block w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                      <span>{lang === 'en' ? 'Regional Platform Telemetry' : 'لوحة متابعة الأداء الإقليمي في آسيا وأفريقيا'}</span>
+                    </h4>
+
+                    <div className="space-y-2 font-sans select-none">
+                      {/* Stat 1 */}
+                      <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-800 text-[10px]">
+                        <span className="text-slate-400">{lang === 'en' ? 'Avg Processing' : 'متوسط مدة الإنجاز'}</span>
+                        <strong className="text-emerald-400 font-bold">{lang === 'en' ? '48 Hrs' : '٤٨ ساعة عمل'}</strong>
+                      </div>
+                      {/* Stat 2 */}
+                      <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-800 text-[10px]">
+                        <span className="text-slate-400">{lang === 'en' ? 'Active Routes' : 'مسارات الشحن والنقل'}</span>
+                        <strong className="text-amber-400 font-bold">{lang === 'en' ? '32 Express Lines' : '٣٢ خط نقل مباشر'}</strong>
+                      </div>
+                      {/* Stat 3 */}
+                      <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-800 text-[10px]">
+                        <span className="text-slate-400">{lang === 'en' ? 'Security Index' : 'مؤشر أمان وخصوصية المعاملة'}</span>
+                        <strong className="text-slate-200 font-bold">100% {lang === 'en' ? 'Encrypted' : 'تشفير كامل'}</strong>
+                      </div>
+                      {/* Stat 4 */}
+                      <div className="flex justify-between items-center bg-slate-900/50 p-2 rounded-lg border border-slate-800 text-[10px]">
+                        <span className="text-slate-400">{lang === 'en' ? 'Connected Embassies' : 'السفارات والقنصليات المعرفّة'}</span>
+                        <strong className="text-indigo-400 font-bold">٤٥ {lang === 'en' ? 'Diplomatic Mission' : 'بعثة دبلوماسية'}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 p-2.5 rounded-lg border border-slate-850 space-y-1">
+                    <span className="text-[9px] text-slate-500 font-bold block text-right font-sans">{lang === 'en' ? 'Operations Note:' : 'ملاحظة تشغيلية مهمة:'}</span>
+                    <p className="text-[9px] text-slate-400 leading-normal text-right font-sans">
+                      {lang === 'en'
+                        ? 'Website publishing sphere is regulated in accordance with the national digitisation roadmap 2026. Data streams are secured via private channels.'
+                        : 'يتم نشر الموقع الرسمي بكفاءة تامة وتغطية إلكترونية نشطة في قارتي آسيا وأفريقيا لتقديم أعلى معايير تخليص التأشيرات والإجراءات بدعم الفوترة الفورية بالمنطقة.'}
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* SERVICES PREVIEW CARDS */}
+            <section className="space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-300 pb-4">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-900">دليل الخدمات والتكاليف والرسوم</h2>
+                  <p className="text-slate-500 text-sm mt-1">تحديد دقيق وموثق للتكاليف الإدارية للمكتب والرسوم التابعة للدولة قبل البدء بالمعاملة.</p>
+                </div>
+                <span className="text-xs bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold px-3 py-1.5 rounded-full mt-2 md:mt-0">
+                  محدثة حسب اللوائح الضريبية لعام 2026 (15%)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {services.slice(0, visibleServicesCount).map(s => (
+                  <ServiceParallaxCard 
+                    key={s.id}
+                    service={s}
+                    onSelect={(serviceId) => {
+                      setSelectedServiceId(serviceId);
+                      // Scroll to form smoothly
+                      document.getElementById('booking-anchor')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    onDetails={(service) => setInfoPopupService(service)}
+                    renderIcon={renderServiceIcon}
+                  />
+                ))}
+              </div>
+
+              {services.length > 10 && (
+                <div className="text-center pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                  {visibleServicesCount < services.length ? (
+                    <button
+                      type="button"
+                      id="load-more-services-btn"
+                      onClick={() => setVisibleServicesCount(prev => prev + 10)}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-full shadow-sm hover:shadow transition-all cursor-pointer"
+                    >
+                      <span>🔽 عرض المزيد من الخدمات ({services.length - visibleServicesCount})</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      id="show-less-services-btn"
+                      onClick={() => setVisibleServicesCount(10)}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-800 font-bold text-xs rounded-full shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+                    >
+                      <span>🔼 طي الخدمات وعرض أقل</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* REALTIME SYSTEM SUBMIT FORM */}
+            <section id="booking-anchor" className="bg-slate-100 py-10 rounded-2xl border border-slate-200 shadow-inner px-4 block">
+              <div className="max-w-xl mx-auto bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+                <div className="bg-gradient-to-l from-slate-900 to-slate-800 text-white p-6 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <PlusCircle className="w-5 h-5 text-amber-500" />
+                    <h3 className="text-xl font-bold">
+                      {lang === 'en' ? 'Submit or Book a New Transaction' : 'تقديم أو حجز معاملة جديدة'}
+                    </h3>
+                  </div>
+                  <p className="text-slate-300 text-xs">
+                    {lang === 'en' ? 'Register your details and you will receive instant follow-up alerts from the reviewing staff.' : 'سجل بياناتك وسيصلك إشعار المتابعة والترحيل الفوري من فريق المراجعة.'}
+                  </p>
+                </div>
+
+                <form onSubmit={handleClientBookingSubmit} className="p-6 space-y-4">
+                  {submissionFeedback && (
+                    <div className={`p-3 rounded-lg border text-sm flex items-start gap-2.5 ${submissionFeedback.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                      {submissionFeedback.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600 mt-0.5" /> : <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-600 mt-0.5" />}
+                      <div>
+                        {submissionFeedback.msg}
+                        {submissionFeedback.success && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedTx(null);
+                              setActiveTab('track');
+                              setHasSearched(true);
+                              const searchInput = document.getElementById('search-phone-input') as HTMLInputElement;
+                              if (searchInput) searchInput.value = searchPhone;
+                            }}
+                            className="block text-emerald-700 underline font-bold mt-1 text-xs"
+                          >
+                            {lang === 'en' ? 'Go to live tracking & inquiry portal now →' : 'انتقل للاستعلام وتتبع حالة المعاملة الآن ←'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        {lang === 'en' ? 'Beneficiary Full Name (Quadruple):' : 'اسم العميل المستفيد بالكامل:'}
+                      </label>
+                      <input 
+                        type="text" 
+                        required
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        placeholder={lang === 'en' ? 'e.g., Abdullah bin Mohammed Al-Otaibi' : 'مثل: عبد الله بن محمد العتيبي'} 
+                        className="w-full p-3 border border-slate-300 rounded focus:outline-none focus:border-amber-500 font-sans shadow-sm text-sm"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {lang === 'en' ? 'Mobile Number (associated with WhatsApp):' : 'رقم جوال العميل للتواصل والمتابعة:'}
+                        </label>
+                        <input 
+                          type="tel" 
+                          required
+                          value={clientPhone}
+                          onChange={(e) => setClientPhone(e.target.value)}
+                          placeholder={lang === 'en' ? 'e.g., 05xxxxxxxx' : 'مثلاً: 0501234567'} 
+                          className="w-full p-3 border border-slate-300 rounded focus:outline-none focus:border-amber-500 font-mono shadow-sm text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                          {lang === 'en' ? 'Select Required Service Type:' : 'اختر نوع الخدمة المطلوبة:'}
+                        </label>
+                        <select 
+                          required
+                          value={selectedServiceId}
+                          onChange={(e) => setSelectedServiceId(e.target.value)}
+                          className="w-full p-3 border border-slate-300 rounded bg-white focus:outline-none focus:border-amber-500 shadow-sm text-sm font-sans"
+                        >
+                          <option value="">{lang === 'en' ? 'Select procedural service...' : 'اختر الخدمة الإجرائية...'}</option>
+                          {services.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {lang === 'en' ? (s.nameEn || s.name) : s.name} ({lang === 'en' ? `Fees: ${s.officeFee} SAR + Gov Fees: ${s.govFee} SAR` : `أتعاب: ${s.officeFee} ر.س + رسوم جهة: ${s.govFee} ر.س`})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                        {lang === 'en' ? 'Any additional notes, specifications, or details:' : 'أي ملاحظات إضافية، مستندات، أو متطلبات خاصة:'}
+                      </label>
+                      <textarea 
+                        value={clientNotes}
+                        onChange={(e) => setClientNotes(e.target.value)}
+                        placeholder={lang === 'en' ? 'Please write any extra details like visa destination country, family size, or special administrative requirements...' : 'دون هنا تفاصيل الطلب الإضافية مثل أعداد الأفراد، الجهة المقصودة للتأشيرة، أي تعليمات خاصة بالإدارة الحكومية...'}
+                        className="w-full p-3 border border-slate-300 rounded focus:outline-none focus:border-amber-500 h-28 font-sans shadow-sm text-sm"
+                      ></textarea>
+                    </div>
+
+                    {/* Integrated PDF Document Upload */}
+                    <div className="space-y-3">
+                      <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <Paperclip className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                        <span>
+                          {lang === 'en' ? 'Attach Transaction Documents in PDF (Optional - National ID, Registry):' : 'إرفاق مستندات المعاملة بصيغة PDF (اختياري - كالهوية الوطنية، السجل، أو المتطلبات):'}
+                        </span>
+                      </label>
+                      <div className="relative border-2 border-dashed border-slate-200 hover:border-amber-500/80 rounded-lg p-5 bg-[#fafbfd] hover:bg-slate-50 transition duration-150 flex flex-col items-center justify-center cursor-pointer min-h-[120px]">
+                        <input 
+                          type="file" 
+                          id="client-pdf-upload"
+                          accept=".pdf"
+                          multiple
+                          onChange={handleFileChange}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                        />
+                        <div className="text-center space-y-1.5 select-none pointer-events-none">
+                          <Upload className="w-8 h-8 text-slate-400 mx-auto" strokeWidth={1.5} />
+                          <p className="text-xs text-slate-600 font-bold">
+                            {lang === 'en' ? 'Drag & drop PDF files here, or click to choose' : 'اسحب ملفات الـ PDF وأفلتها هنا أو انقر للتحديد من جهازك'}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {lang === 'en' ? 'Supports multiple PDF documents (Max 4MB per file)' : 'يقبل النظام ملفات متعددة بصيغة PDF فقط (بحد أقصى 4 ميجابايت للملف الواحد)'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Uploading Files Progress (Shown during active upload) */}
+                      {Object.keys(uploadProgresses).length > 0 && (
+                        <div className="space-y-2.5">
+                          <p className="text-xs font-bold text-amber-700 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                            <span>{lang === 'en' ? 'Currently uploading and processing document files...' : 'يجري رفع معالجة الملفات المحددة حالياً...'}</span>
+                          </p>
+                          {Object.entries(uploadProgresses).map(([fileName, details]) => {
+                            const info = details as { progress: number; size: string };
+                            return (
+                              <div key={fileName} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 select-none relative z-30 animate-fade-in font-sans">
+                                <div className="flex items-center justify-between text-xs">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <FileText className="w-4 h-4 text-amber-650 flex-shrink-0 animate-pulse" />
+                                    <div className={`${lang === 'en' ? 'text-left' : 'text-right'} min-w-0`}>
+                                      <p className="font-bold text-slate-700 truncate max-w-[250px]" title={fileName}>{fileName}</p>
+                                      <p className="text-[9px] text-slate-400 font-mono">{info.size}</p>
+                                    </div>
+                                  </div>
+                                  <span className="font-extrabold text-amber-600 font-mono text-[11px] bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">{info.progress}%</span>
+                                </div>
+                                {/* Progress bar */}
+                                <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                  <div 
+                                    className="bg-amber-500 h-full rounded-full transition-all duration-100" 
+                                    style={{ width: `${info.progress}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Completed/Attached Files List */}
+                      {attachedFiles.length > 0 && (
+                        <div className="space-y-2.5 font-sans">
+                          <p className="text-xs font-bold text-emerald-800 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>
+                              {lang === 'en' ? `Attached Documents (${attachedFiles.length}):` : `المستندات المرفقة بنجاح (${attachedFiles.length}):`}
+                            </span>
+                          </p>
+                          <div className="space-y-2">
+                            {attachedFiles.map((file, idx) => (
+                              <div key={idx} className="w-full flex items-center justify-between bg-emerald-50 border border-emerald-150 p-2.5 rounded-lg text-xs select-none relative z-30 animate-fade-in hover:bg-emerald-50/80 transition-colors">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <FileText className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                                  <div className={`${lang === 'en' ? 'text-left' : 'text-right'} min-w-0`}>
+                                    <p className="font-bold text-slate-800 truncate max-w-[280px]" title={file.name}>{file.name}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono">{file.size}</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setAttachedFiles(prev => prev.filter((_, fIdx) => fIdx !== idx));
+                                  }}
+                                  className="text-[11px] text-red-600 hover:text-red-700 bg-white hover:bg-red-50 px-2.5 py-1.5 rounded-md border border-red-100 hover:border-red-200 transition font-extrabold relative z-40"
+                                  title={lang === 'en' ? 'Remove this document' : 'إزالة هذا المستند'}
+                                >
+                                  {lang === 'en' ? '✕ Remove' : '✕ إزالة'}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button 
+                      type="submit" 
+                      className="w-full bg-slate-900 border border-slate-950 text-white hover:bg-slate-800 transition py-3.5 rounded-lg text-sm font-bold shadow-md flex items-center justify-center gap-2"
+                    >
+                      <span>{lang === 'en' ? 'Confirm Submission & Route to Sama Al-Mamlakah Office' : 'تأكيد الإرسال والترحيل لمكتب سما المملكة'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </section>
+          </div>
+        )}
+        {activeTab === 'track' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-xl shadow border border-slate-200">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2.5">
+                <Search className="w-5.5 h-5.5 text-amber-600" />
+                <span>
+                  {lang === 'en' ? 'Interactive Transaction Status Tracking & Financial Inquiries' : 'الاستعلام التفاعلي عن حالة المعاملات والطلبات المالية'}
+                </span>
+              </h2>
+              <p className="text-slate-500 text-xs mt-1.5 leading-relaxed">
+                {lang === 'en' ? 'Please enter your registered mobile phone number when submitting your booking request to view live statuses and access simplified invoices immediately.' : 'يرجى إدخال رقم الجوال المسجل عند تقديم المعاملة لاستعراض حالة طلبك فورياً، والاطلاع على الفاتورة المبسطة وتنزيلها للعملاء الذين أكملوا سداد رسوم المعاملة الإدارية.'}
+              </p>
+
+              <form onSubmit={handleTrackPhoneNumberLookup} className="mt-5 max-w-lg">
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    id="search-phone-input"
+                    value={searchPhone}
+                    onChange={(e) => {
+                      setSearchPhone(e.target.value);
+                      setHasSearched(false);
+                    }}
+                    placeholder={lang === 'en' ? 'e.g., 05xxxxxxxx' : 'مثال رقم الجوال: 0501234567'}
+                    className="flex-1 p-3 border-2 border-slate-300 rounded focus:outline-none focus:border-slate-800 font-mono text-sm"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-6 py-3 rounded text-sm whitespace-nowrap transition-colors flex items-center gap-2"
+                  >
+                    <Search className="w-4 h-4" />
+                    <span>{lang === 'en' ? 'Track Now' : 'تتبع الآن'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {hasSearched ? (
+              trackedRequests.length > 0 ? (
+                <div className="space-y-4">
+                  <div className="text-slate-700 font-bold text-sm">
+                    {lang === 'en' ? `We found (${trackedRequests.length}) registered transactions associated with your lookup:` : `وجدنا عدد (${trackedRequests.length}) معامِلات مسجلة لطلبك المالي:`}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {trackedRequests.map(b => {
+                      // Lookup corresponding transaction
+                      // If the request has matched name & service, let's link
+                      const correspondingTx = transactions.find(
+                        t => t.clientName.trim() === b.clientName.trim() && t.serviceName.trim() === b.serviceName.trim()
+                      );
+
+                      return (
+                        <div key={b.id} className="bg-white border-r-4 border-l border-t border-b border-slate-200 rounded-lg p-5 shadow-sm relative flex flex-col justify-between"
+                          style={{
+                            borderRightColor: 
+                              b.status === 'completed' ? '#10b981' : 
+                              b.status === 'processing' ? '#3b82f6' : 
+                              b.status === 'cancelled' ? '#ef4444' : '#f59e0b'
+                          }}
+                        >
+                          <div>
+                            <div className="flex justify-between items-center mb-3">
+                              <span className="font-mono text-xs text-slate-500 font-bold">
+                                {lang === 'en' ? `Tran ID: #${b.id.substring(3, 9)}` : `معاملة ID: #${b.id.substring(3, 9)}`}
+                              </span>
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                b.status === 'completed' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
+                                b.status === 'processing' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                                b.status === 'cancelled' ? 'bg-red-50 text-red-800 border border-red-200' :
+                                'bg-amber-50 text-amber-800 border border-amber-200'
+                              }`}>
+                                {b.status === 'pending' && (lang === 'en' ? 'Pending Administrative Review' : 'قيد الانتظار لمراجعة الإدارة')}
+                                {b.status === 'processing' && (lang === 'en' ? 'Processing & Executing' : 'تحت المعالجة الإجرائية الآن')}
+                                {b.status === 'completed' && (lang === 'en' ? 'Completed & Invoice Ready' : 'مكتملة ومستند الفاتورة جاهز')}
+                                {b.status === 'cancelled' && (lang === 'en' ? 'Cancelled' : 'ملغية')}
+                              </span>
+                            </div>
+
+                            <h4 className="text-base font-black text-slate-900 mb-1">{b.serviceName}</h4>
+                            <p className="text-slate-500 text-xs mb-3 font-mono">
+                              {lang === 'en' ? `Booking Date: ${new Date(b.date).toLocaleDateString('en-US')}` : `تاريخ تقديم الطلب المالي: ${new Date(b.date).toLocaleDateString('ar-SA')}`}
+                            </p>
+                            
+                            {b.notes && (
+                              <div className="text-xs bg-slate-50 p-2.5 rounded border border-slate-200 text-slate-600 line-clamp-2 mb-4 font-sans">
+                                <strong>{lang === 'en' ? 'Your booking notes:' : 'ملاحظاتك للطلب:'}</strong> {b.notes}
+                              </div>
+                            )}
+
+                            {/* Dynamic Customizable Admin Status Message */}
+                            <div className={`text-xs p-3.5 rounded-lg border leading-relaxed mb-4 font-sans shadow-3xs ${
+                              b.status === 'completed' ? 'bg-emerald-50/60 border-emerald-200 text-emerald-950' :
+                              b.status === 'processing' ? 'bg-blue-50/60 border-blue-200 text-blue-950' :
+                              b.status === 'cancelled' ? 'bg-red-50/60 border-red-200 text-red-950' :
+                              'bg-amber-50/60 border-amber-200 text-amber-950'
+                            }`}>
+                              <div className="flex items-center gap-1.5 font-extrabold mb-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 animate-pulse" />
+                                <span className="text-slate-900 text-[11px]">{lang === 'en' ? 'Instant status feedback statement:' : 'رسالة إفادة حالة الطلب الفورية:'}</span>
+                              </div>
+                              <p className="font-medium text-slate-800 antialiased whitespace-pre-wrap leading-normal">
+                                {b.status === 'pending' && statusMsgPending}
+                                {b.status === 'processing' && statusMsgProcessing}
+                                {b.status === 'completed' && statusMsgCompleted}
+                                {b.status === 'cancelled' && statusMsgCancelled}
+                              </p>
+                            </div>
+
+                            {getBookingFiles(b).length > 0 && (
+                              <div className="space-y-2 mb-4">
+                                <p className="text-[10px] font-bold text-slate-500">
+                                  {lang === 'en' ? `Official Attached Documents (${getBookingFiles(b).length}):` : `المستندات الرسمية المرفقة (${getBookingFiles(b).length}):`}
+                                </p>
+                                {getBookingFiles(b).map((file, fIdx) => (
+                                  <div key={fIdx} className="text-xs bg-emerald-50/40 p-2 rounded-lg border border-emerald-150 text-slate-700 flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                      <Paperclip className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                                      <span className={`${lang === 'en' ? 'text-left' : 'text-right'} truncate font-bold text-slate-850`} title={file.name}>
+                                        {file.name}
+                                      </span>
+                                      <span className="text-[10px] text-slate-500 font-mono">({file.size})</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                      {file.data && (
+                                        <a
+                                          href={file.data}
+                                          download={file.name}
+                                          className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-950 bg-amber-500 hover:bg-amber-600 border border-amber-600 px-2.5 py-1 rounded shadow-3xs hover:shadow-2xs transition-all cursor-pointer"
+                                          title={lang === 'en' ? 'Download file directly' : 'تنزيل المستند مباشرة'}
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <Download className="w-3 h-3" />
+                                          <span>{lang === 'en' ? 'Download' : 'تنزيل'}</span>
+                                        </a>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedViewBooking(b);
+                                          setPreviewFile(file);
+                                        }}
+                                        className="text-[10px] bg-emerald-100 text-emerald-800 hover:bg-emerald-200 px-2.5 py-1 rounded font-bold whitespace-nowrap transition-colors"
+                                        title={lang === 'en' ? 'Preview document' : 'استعراض المستند'}
+                                      >
+                                        {lang === 'en' ? 'Preview' : 'معاينة'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+                            <span className="text-xs text-slate-500 font-sans">
+                              {lang === 'en' ? <>Beneficiary: <strong className="text-slate-800">{b.clientName}</strong></> : <>اسم المستفيد: <strong className="text-slate-800">{b.clientName}</strong></>}
+                            </span>
+                            {b.status === 'completed' && correspondingTx ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    setSelectedTx(correspondingTx);
+                                    setIsInvoiceOpen(true);
+                                  }}
+                                  className="bg-sky-50 hover:bg-sky-100 text-sky-900 border border-sky-300 font-bold text-xs px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                                  title={lang === 'en' ? 'View Tax Simplified Invoice Details' : 'استعراض تفاصيل الفاتورة الضريبية'}
+                                >
+                                  <Receipt className="w-3.5 h-3.5 text-sky-600" />
+                                  <span>{lang === 'en' ? 'Invoice details' : 'تفاصيل الفاتورة'}</span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setSelectedTx(correspondingTx);
+                                    setIsInvoiceOpen(true);
+                                    setTimeout(() => {
+                                      window.print();
+                                    }, 180);
+                                  }}
+                                  className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
+                                  title={lang === 'en' ? 'Print simplified VAT invoice' : 'طباعة الفاتورة والعمولات مباشرة'}
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                  <span>{lang === 'en' ? 'Print Invoice' : 'طباعة الفاتورة'}</span>
+                                </button>
+                              </div>
+                            ) : b.status === 'completed' ? (
+                              <div className="text-[11px] text-slate-400 font-sans italic">
+                                {lang === 'en' ? 'The administration will link this service with the ledger shortly to generate the invoice file.' : 'يرجى من الإدارة ربط المعاملة بالدفتر المالي لتظهر الفاتورة'}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-400 italic font-sans flex items-center gap-1">
+                                <Activity className="w-3.5 h-3.5 animate-pulse text-amber-600" />
+                                <span>{lang === 'en' ? 'Invoice will populate automatically upon execution & financial clearance' : 'ستظهر الفاتورة فور الإنجاز والترحيل المالي'}</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-amber-50 text-amber-950 p-5 rounded-lg border border-amber-200 max-w-lg flex gap-3 text-sm">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 text-amber-600 mt-0.5" />
+                  <div>
+                    <span className="font-bold block mb-1">{lang === 'en' ? 'No Registered Transactions Found' : 'لم نجد أي معاملات مسجلة'}</span>
+                    {lang === 'en' ? (
+                      <>The number you entered <strong className="font-mono text-slate-900">"{searchPhone}"</strong> does not match any current transaction in the Sama Al-Mamlakah Office archive. Please verify that the number matches the one submitted in the booking form.</>
+                    ) : (
+                      <>الرقم الذي أدخلته <strong className="font-mono text-slate-900">"{searchPhone}"</strong> لا يطابق أي معاملة حالية في أرشيف مكتب سما المملكة. يرجى التأكد من كتابة الرقم بشكل صحيح الذي تم تقديمه خلال استمارة الحجز."</>
+                    )}
+                  </div>
+                </div>
+              )
+            ) : (
+              <div className="p-8 text-center text-slate-400 border-2 border-dashed border-slate-300 rounded-xl bg-white max-w-xl">
+                <HelpCircle className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                <p className="text-xs">
+                  {lang === 'en' ? 'Please fill in your mobile phone number above to track your requests or print your verified automated invoices.' : 'يرجى تعبئة رقم جوالك بالأعلى لمتابعة طلباتك أو إصدار فواتيرك بطريقة آلية معتمدة.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==================== TAB 3: ADMIN & OPERATIONS CONTROL PANEL ==================== */}
+        {activeTab === 'admin' && isAdminAuthenticated && (
+          <div className="space-y-8 animate-fade-in">
+            
+            {/* Admin Header Toolbar */}
+            <div className="bg-white p-5 rounded-xl shadow-md border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
+              <div>
+                <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <ShieldCheck className="w-7 h-7 text-amber-600" />
+                  <span>بوابة إدارة وعمليات مكتب سما المملكة المالية</span>
+                </h2>
+                <p className="text-slate-500 text-xs mt-1">نظام حسابي ورقابي عالي الكفاءة يدعم إحصاءات المعاملات والفوترة وفق معايير ١٥% نسبة ضريبية مضافة.</p>
+              </div>
+
+              {/* Toolbar Actions */}
+              <div className="flex gap-2.5 flex-wrap">
+                <button
+                  onClick={() => setAdminTab('stats')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${adminTab === 'stats' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  التقارير والإخصاءات المالية
+                </button>
+                <button
+                  onClick={() => setAdminTab('requests')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${adminTab === 'requests' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  الطلبات الواردة من الموقع ({bookings.filter(b => b.status === 'pending').length})
+                </button>
+                <button
+                  onClick={() => setAdminTab('ledger')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${adminTab === 'ledger' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  المحاسبة والقيود المالية للدولة والمكتب
+                </button>
+                <button
+                  onClick={() => setAdminTab('services')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${adminTab === 'services' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  إدارة دليل الخدمات وأسعار العمليات
+                </button>
+                <button
+                  onClick={() => setAdminTab('whatsapp')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all whitespace-nowrap bg-emerald-950/20 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-900/40 ${
+                    adminTab === 'whatsapp' ? 'bg-emerald-600 text-slate-950 border-emerald-500' : ''
+                  }`}
+                >
+                  💬 إشعارات واتساب الفورية {whatsappLogs.length > 0 && `(${whatsappLogs.length})`}
+                </button>
+              </div>
+            </div>
+
+            {/* --- ADMIN INTERNAL VIEW 1: STATS & SUMMARY --- */}
+            {adminTab === 'stats' && (
+              <div className="space-y-8">
+                {/* Stats grid */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  
+                  {/* Total Revenues */}
+                  <div className="bg-white p-5 rounded-xl shadow border-r-8 border-slate-900 border-t border-b border-l border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-slate-500 text-xs font-bold block">إجمالي أتعاب المكتب الصافية</span>
+                      <strong className="text-2xl font-black text-slate-900 mt-1.5 block font-mono">{totalOfficeRevenues.toFixed(2)} ر.س</strong>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-sans block mt-3">من استخلاص وبنود الخدمات فقط</span>
+                  </div>
+
+                  {/* Total Taxes */}
+                  <div className="bg-white p-5 rounded-xl shadow border-r-8 border-amber-600 border-t border-b border-l border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-slate-500 text-xs font-bold block">مجموع ضريبة القيمة المضافة (15%)</span>
+                      <strong className="text-2xl font-black text-slate-900 mt-1.5 block font-mono">{totalVATCollected.toFixed(2)} ر.س</strong>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-sans block mt-3">مستحقات الخزينة - هيئة الزكاة والجمارك</span>
+                  </div>
+
+                  {/* Gov payments */}
+                  <div className="bg-white p-5 rounded-xl shadow border-r-8 border-blue-900 border-t border-b border-l border-slate-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-slate-500 text-xs font-bold block flex items-center gap-1">
+                        <span>أمانات الرسوم الحكومية للدولة</span>
+                      </span>
+                      <strong className="text-2xl font-black text-slate-900 mt-1.5 block font-mono">{totalGovSpent.toFixed(2)} ر.s</strong>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-sans block mt-3">معفاة من الضريبة (مستحقات جهات الإصدار للوزارات)</span>
+                  </div>
+
+                  {/* Combined throughput */}
+                  <div className="bg-amber-50 p-5 rounded-xl shadow border border-amber-200 flex flex-col justify-between">
+                    <div>
+                      <span className="text-amber-800 text-xs font-black block">إجمالي الحركة المالية الكلية</span>
+                      <strong className="text-2xl font-black text-amber-950 mt-1.5 block font-mono">{totalOverallAccountingVolume.toFixed(2)} ر.س</strong>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-sans block mt-3">شاملة الرسوم والضرائب التامة</span>
+                  </div>
+                </div>
+
+                {/* Sub row: Count charts & quick lookup lists */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  
+                  {/* Status Counts */}
+                  <div className="bg-white p-5 rounded-xl shadow border border-slate-200 col-span-1">
+                    <h3 className="font-bold text-slate-900 text-sm border-b border-slate-100 pb-3 mb-4 flex items-center gap-2">
+                      <Activity className="w-4 h-4 text-slate-600" />
+                      <span>إحصائيات حالات المعاملات المرفوعة</span>
+                    </h3>
+
+                    <div className="space-y-3 font-sans text-xs">
+                      <div className="flex justify-between items-center p-2.5 bg-yellow-50 text-yellow-800 rounded border border-yellow-100">
+                        <span className="font-bold">قيد الانتظار لمراجعة الإدارة:</span>
+                        <strong className="text-sm font-mono">{bookings.filter(b => b.status === 'pending').length}</strong>
+                      </div>
+                      <div className="flex justify-between items-center p-2.5 bg-blue-50 text-blue-800 rounded border border-blue-100">
+                        <span className="font-bold">تحت المعالجة الإجرائية والتعقيب:</span>
+                        <strong className="text-sm font-mono">{bookings.filter(b => b.status === 'processing').length}</strong>
+                      </div>
+                      <div className="flex justify-between items-center p-2.5 bg-emerald-50 text-emerald-800 rounded border border-emerald-100">
+                        <span className="font-bold">المكتملة بنجاح:</span>
+                        <strong className="text-sm font-mono">{bookings.filter(b => b.status === 'completed').length}</strong>
+                      </div>
+                      <div className="flex justify-between items-center p-2.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
+                        <span>إجمالي الطلبات الكلي:</span>
+                        <strong className="text-sm font-mono">{bookings.length}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Simple dynamic SVG visualizer of Service popularity in financial ledger */}
+                  <div className="bg-white p-5 rounded-xl shadow border border-slate-200 lg:col-span-2">
+                    <h3 className="font-bold text-slate-900 text-sm border-b border-slate-100 pb-3 mb-4">
+                      مقارنة الحصص الإيرادية للخدمات بالدفتر الحسابي
+                    </h3>
+                    
+                    {transactions.length === 0 ? (
+                      <p className="text-slate-400 text-xs italic text-center py-10">لا تتوفر معاملات منجزة حتى الآن لرسم المخططات الإحصائية.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {services.map(s => {
+                          const associatedTxs = transactions.filter(t => t.serviceName === s.name);
+                          const revenueForThis = associatedTxs.reduce((sum, t) => sum + t.officeFee, 0);
+                          const percentageOfTotal = totalOfficeRevenues > 0 ? (revenueForThis / totalOfficeRevenues) * 100 : 0;
+
+                          return (
+                            <div key={s.id} className="text-xs space-y-1">
+                              <div className="flex justify-between text-slate-600">
+                                <span className="font-bold">{s.name} ({associatedTxs.length} فواتير)</span>
+                                <span className="font-mono text-slate-900 font-semibold">{revenueForThis.toFixed(2)} ر.س ({percentageOfTotal.toFixed(0)}%)</span>
+                              </div>
+                              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                                <div 
+                                  className="bg-amber-500 h-full rounded-full transition-all" 
+                                  style={{ width: `${Math.max(percentageOfTotal, 2)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Service Performance Metrics and Booking Link Analytics Dashboard */}
+                <div className="bg-white p-6 rounded-xl shadow border border-slate-200 space-y-4">
+                  <div className="border-b border-slate-100 pb-3">
+                    <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-amber-650" />
+                      <span>تقارير كفاءة وأداء دليـل الخدمات بالمكتب (تحليل طلبات العملاء المربوطة)</span>
+                    </h3>
+                    <p className="text-slate-500 text-[11px] mt-1 font-sans">
+                      مؤشرات حية تقيس تجاوب وتفاعل الجمهور مع خدمات سما المملكة، وحجم المبيعات والربحية المتوقعة لكل باقة بشكل عملياتي.
+                    </p>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead className="bg-[#f8fafc] border-b border-slate-200 text-slate-500 font-extrabold">
+                        <tr>
+                          <th className="p-3 text-right">اسم وباقة الخدمة</th>
+                          <th className="p-3 text-right">النوع فئوياً</th>
+                          <th className="p-3 text-center">مجموع الطلبات الكلي</th>
+                          <th className="p-3 text-center">توزيع حالات المعاملات (انتظار / معالجة / مكتملة)</th>
+                          <th className="p-3 text-center">معدل الإغلاق والجاهزية</th>
+                          <th className="p-3 text-left">أتعاب المكتب المتوقعة بالطابور</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-sans">
+                        {services.map(s => {
+                          const linkedRequests = bookings.filter(b => b.serviceId === s.id);
+                          const totalCount = linkedRequests.length;
+                          
+                          const pendingCount = linkedRequests.filter(b => b.status === 'pending').length;
+                          const processingCount = linkedRequests.filter(b => b.status === 'processing').length;
+                          const completedCount = linkedRequests.filter(b => b.status === 'completed').length;
+                          const cancelledCount = linkedRequests.filter(b => b.status === 'cancelled').length;
+                          const activeCount = totalCount - cancelledCount;
+                          
+                          // Potential revenues calculated for non-cancelled linked bookings
+                          const potentialRevenue = activeCount * s.officeFee;
+                          const successRate = totalCount > 0 ? ((completedCount / (activeCount || 1)) * 100) : 0;
+
+                          return (
+                            <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-3">
+                                <strong className="text-slate-900 block font-sans">{s.name}</strong>
+                                <span className="text-[10px] text-slate-400 font-mono">الرمز: {s.id}</span>
+                              </td>
+                              <td className="p-3">
+                                <span className="inline-block text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold font-sans">
+                                  📁 {getCategoryName(s.category)}
+                                </span>
+                              </td>
+                              <td className="p-3 text-center font-mono font-bold text-slate-800">
+                                {totalCount} طلبات
+                              </td>
+                              <td className="p-3">
+                                <div className="flex items-center justify-center gap-1.5 text-[10px]">
+                                  <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-mono font-bold" title="قيد الانتظار لمراجعة الإدارة">
+                                    {pendingCount} قيد الانتظار
+                                  </span>
+                                  <span className="bg-blue-105 text-blue-800 px-2 py-0.5 rounded-md font-mono font-bold" title="تحت المعالجة الإجرائية والتعقيب">
+                                    {processingCount} تحت التنفيذ
+                                  </span>
+                                  <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-mono font-bold animate-pulse" title="مكتملة ومصدقة بنجاح">
+                                    {completedCount} مكتملة ✓
+                                  </span>
+                                  {cancelledCount > 0 && (
+                                    <span className="bg-red-50 text-red-650 px-2 py-0.5 rounded-md font-mono font-semibold" title="قائمة الطلبات الملغاة">
+                                      {cancelledCount} ملغي ✕
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center justify-center gap-2">
+                                  <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden hidden sm:block">
+                                    <div 
+                                      className="bg-emerald-500 h-full rounded-full transition-all" 
+                                      style={{ width: `${Math.min(successRate, 100)}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="font-mono text-xs font-bold text-emerald-700">
+                                    {Math.min(successRate, 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3 text-left font-mono font-black text-amber-900 text-xs">
+                                {potentialRevenue.toFixed(2)} ر.س
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Developer audit info block */}
+                <div className="p-4 bg-slate-150 border border-slate-200 rounded-lg text-slate-600 text-xs space-y-1">
+                  <span className="font-bold block text-slate-800">سجل النشاط العام للبوابة:</span>
+                  <p>• النظام يعمل بالكامل على الذاكرة التزامنية المستندة إلى المتصفح المحلي (Local & Session Storage) لسرية معلومات العهدة.</p>
+                  <p>• يرجى إسناد وتعديل الحصص المالية للجهات المعفاة من الضرائب بشكل موثق من قسم إدارة تعرفة الخدمات.</p>
+                </div>
+              </div>
+            )}
+
+            {/* --- ADMIN INTERNAL VIEW 2: CLIENT BOOKINGS MANAGER --- */}
+            {adminTab === 'requests' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-950">إدارة طلبات المعاملات والتعقيب المرفوعة</h3>
+                    <p className="text-slate-500 text-xs mt-1">طلبات العملاء تأتي من الموقع الخارجي؛ يمكنك مراجعتها، تحديث حالاتها، أو ترحيلها مباشرة كمستند فاتورة مالي.</p>
+                  </div>
+                  <span className="text-xs bg-slate-200 font-bold px-2.5 py-1 rounded-full text-slate-700">إجمالي الطلبات: {bookings.length}</span>
+                </div>
+
+                {bookings.length === 0 ? (
+                  <div className="text-center py-10 bg-white border border-stone-200 rounded-lg text-slate-400 text-sm">
+                    لا تتوفر طلبات مرفوعة حالياً من الموقع بانتظار معاملات جديدة.
+                  </div>
+                ) : (
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right text-xs">
+                        <thead className="bg-[#f8fafc] border-b border-slate-200 text-slate-700 font-bold">
+                          <tr>
+                            <th className="p-4">العميل المستفيد وجواله</th>
+                            <th className="p-4">الخدمة المطلوبة</th>
+                            <th className="p-4">تاريخ المرفق</th>
+                            <th className="p-4 text-center">الوضعية الحالية للطلب</th>
+                            <th className="p-4 text-left">العمليات الإدارية الفورية</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-150">
+                          {bookings.map(b => (
+                            <tr key={b.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4">
+                                <strong className="text-slate-900 block text-sm font-sans">{b.clientName}</strong>
+                                <span className="text-slate-500 font-mono tracking-wide">{b.phoneNumber}</span>
+                                {b.notes && (
+                                  <p className="text-[11px] text-slate-500 mt-1 max-w-sm font-sans line-clamp-2" title={b.notes}>
+                                    <strong>ملاحظات:</strong> {b.notes}
+                                  </p>
+                                )}
+                                {getBookingFiles(b).length > 0 && (
+                                  <div className="mt-2 space-y-1.5 max-w-sm">
+                                    <p className="text-[10px] font-extrabold text-slate-400">المستندات الرسمية ({getBookingFiles(b).length}):</p>
+                                    {getBookingFiles(b).map((file, fIdx) => (
+                                      <div key={fIdx} className="flex items-center gap-1.5 flex-wrap">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedViewBooking(b);
+                                            setPreviewFile(file);
+                                          }}
+                                          className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-850 bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md transition-colors"
+                                          title="اضغط لمعاينة هذا الملف PDF تفاعلياً"
+                                        >
+                                          <Paperclip className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                                          <span className="truncate max-w-[130px] font-sans" title={file.name}>{file.name}</span>
+                                          <span className="text-[9px] text-slate-400 font-mono">({file.size})</span>
+                                        </button>
+                                        {file.data && (
+                                          <a
+                                            href={file.data}
+                                            download={file.name}
+                                            className="inline-flex items-center gap-1 text-[9px] font-extrabold text-slate-950 bg-amber-500 hover:bg-amber-600 border border-amber-600 px-1.5 py-0.5 rounded cursor-pointer"
+                                            title="تنزيل المستند مباشرة"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <Download className="w-2.5 h-2.5" />
+                                            <span>تنزيل</span>
+                                          </a>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="p-4">
+                                <div className="flex flex-col gap-1 max-w-[180px]">
+                                  <select
+                                    value={b.serviceId}
+                                    onChange={(e) => handleUpdateBookingService(b.id, e.target.value)}
+                                    className="p-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 cursor-pointer font-sans shadow-3xs"
+                                    title="ربط وتعديل ارتباط هذا الطلب بخدمة أخرى من دليل الخدمات لتتبع أدائه المالي والعملياتي"
+                                  >
+                                    {services.map(s => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.name} ({s.officeFee} ر.س)
+                                      </option>
+                                    ))}
+                                    {!services.some(s => s.id === b.serviceId) && (
+                                      <option value={b.serviceId} disabled>
+                                        {b.serviceName} (غير ملتصق بالدليل)
+                                      </option>
+                                    )}
+                                  </select>
+                                  <span className="text-[9px] text-slate-400 font-sans block">
+                                    معرّف الحزمة: <span className="font-mono text-[8px] bg-slate-100 px-1 py-0.5 rounded text-slate-600">{b.serviceId || 'srv-none'}</span>
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-4 font-mono text-slate-500 text-xs">
+                                {new Date(b.date).toLocaleDateString('ar-SA')} 
+                                <span className="block text-[10px] text-slate-400 mt-0.5">
+                                  {new Date(b.date).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                <select
+                                  value={b.status}
+                                  onChange={(e) => handleUpdateBookingStatus(b.id, e.target.value as any)}
+                                  className={`p-1.5 text-xs font-bold rounded border bg-white focus:outline-none ${
+                                    b.status === 'completed' ? 'text-emerald-800 border-emerald-300 bg-emerald-50' :
+                                    b.status === 'processing' ? 'text-blue-800 border-blue-300 bg-blue-50' :
+                                    b.status === 'cancelled' ? 'text-red-800 border-red-300 bg-red-50' :
+                                    'text-amber-850 border-amber-300 bg-amber-50'
+                                  }`}
+                                >
+                                  <option value="pending">قيد الانتظار لمراجعة الإدارة</option>
+                                  <option value="processing">تحت الإخراج والتعقيب</option>
+                                  <option value="completed">مكتملة ومستحقة الدفع</option>
+                                  <option value="cancelled">ملغية ومسحوبة</option>
+                                </select>
+                              </td>
+                              <td className="p-4 text-left space-x-reverse space-x-1.5">
+                                <button
+                                  onClick={() => handlePreFillTransactionFromBooking(b)}
+                                  className="bg-slate-950 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded font-black text-[11px] transition-colors"
+                                  title="ترحيل بيانات الطلب لإنشاء قيد مالي"
+                                >
+                                  ترحيل لدفتر الفواتير المالية
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm('هل تريد حذف سجل الطلب هذا نهائياً من أرشيف المراجعة؟')) {
+                                      const filtered = bookings.filter(item => item.id !== b.id);
+                                      setBookings(filtered);
+                                    }
+                                  }}
+                                  className="p-1 px-1.5 text-red-600 hover:text-white hover:bg-red-600 border border-red-200 rounded transition-colors"
+                                  title="حذف من الأرشيف"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* --- ADMIN INTERNAL VIEW 3: ACCOUNTING JOURNAL (GENERAL LEDGER) --- */}
+            {adminTab === 'ledger' && (
+              <div className="space-y-8 animate-fade-in">
+                
+                {/* 1. Register new ledger transaction */}
+                <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-md">
+                  <div className="flex items-center gap-2 mb-4 text-slate-900 border-b border-slate-100 pb-2.5">
+                    <PlusCircle className="w-5 h-5 text-amber-600" />
+                    <h3 className="text-base font-extrabold">تسجيل وترحيل فاتورة وعملية مالية جديدة</h3>
+                  </div>
+
+                  <form onSubmit={handleAddTransactionSubmit} className="space-y-4 font-sans text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      {/* Client Name */}
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">اسم العميل بالكامل:</label>
+                        <input
+                          type="text"
+                          required
+                          value={txClientName}
+                          onChange={(e) => setTxClientName(e.target.value)}
+                          placeholder="مثلاً: شركة النخبة المحدودة"
+                          className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 text-sm font-sans"
+                        />
+                      </div>
+
+                      {/* Service Type matched */}
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">الخدمة الإجرائية للمكتب:</label>
+                        <select
+                          value={txServiceId}
+                          onChange={(e) => handleAdminServiceSelectChange(e.target.value)}
+                          className="w-full p-2.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 text-sm font-sans"
+                        >
+                          {services.map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Gov State Fee */}
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">الرسوم والمستحقات الحكومية (ر.س):</label>
+                        <input
+                          type="number"
+                          required
+                          value={txGovFee}
+                          onChange={(e) => setTxGovFee(Number(e.target.value) || 0)}
+                          placeholder="0.00"
+                          className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 text-sm font-mono"
+                        />
+                      </div>
+
+                      {/* Office administrative fee */}
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">أتعاب خدمات سما المملكة (ر.س):</label>
+                        <input
+                          type="number"
+                          required
+                          value={txOfficeFee}
+                          onChange={(e) => setTxOfficeFee(Number(e.target.value) || 0)}
+                          placeholder="0.00"
+                          className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 text-sm font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Additional Notes for Invoice */}
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">ملاحظات المستند المالي وفترة التغطية:</label>
+                      <input
+                        type="text"
+                        value={txNotes}
+                        onChange={(e) => setTxNotes(e.target.value)}
+                        placeholder="مثل: المتابعة لإصدار السجل التجاري شامل الترخيص والدفاع المدني بجدة..."
+                        className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 text-sm font-sans"
+                      />
+                    </div>
+
+                    {/* Pricing calculation feedback banner */}
+                    <div className="bg-[#f8fafc] p-3 rounded border border-slate-205 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono items-center">
+                      <div>
+                        <span className="text-slate-500 font-sans">أتعاب المكتب الخاضعة:</span>
+                        <strong className="block text-slate-900 text-sm">{txOfficeFee.toFixed(2)} ر.س</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-sans">ضريبة مضافة (15%):</span>
+                        <strong className="block text-slate-950 text-sm">{(txOfficeFee * 0.15).toFixed(2)} ر.س</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 font-sans">جهة الرسوم (معفى ضريبياً):</span>
+                        <strong className="block text-blue-900 text-sm">{txGovFee.toFixed(2)} ر.س</strong>
+                      </div>
+                      <div className="bg-amber-100 p-2 rounded text-center col-span-1 font-sans">
+                        <span className="text-amber-850 font-bold">المجموع المقيد:</span>
+                        <strong className="block text-amber-950 text-sm font-mono">{(txGovFee + txOfficeFee + (txOfficeFee * 0.15)).toFixed(2)} ر.س</strong>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="submit"
+                        className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-sm px-6 py-2.5 rounded shadow transition-colors"
+                      >
+                        ترحيل وترصيد الفاتورة الضريبية
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                {/* 2. Ledger list transactions */}
+                <div className="space-y-4 font-sans">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-200">
+                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                      <FileSpreadsheet className="w-5.5 h-5.5 text-slate-600" />
+                      <span>دفتر قيود الحسابات والفواتير المرفوعة</span>
+                    </h3>
+                    <span className="text-xs text-slate-500 font-mono">العمليات المرحلة كلياً: {transactions.length}</span>
+                  </div>
+
+                  {transactions.length === 0 ? (
+                    <div className="py-12 text-center text-slate-400 text-xs bg-white border border-slate-205 rounded">
+                      لا توجد فواتير ضريبية مقيدة بالدفتر المالي بعد.
+                    </div>
+                  ) : (
+                    <div className="bg-white border border-slate-250 rounded-xl overflow-hidden shadow-sm">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-right text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                              <th className="p-3">رقم الفاتورة</th>
+                              <th className="p-3">العميل</th>
+                              <th className="p-3">اسم الخدمة</th>
+                              <th className="p-3">رسوم الدولة</th>
+                              <th className="p-3">أتعاب المكتب</th>
+                              <th className="p-3">الضريبة</th>
+                              <th className="p-3">المجموع الكلي</th>
+                              <th className="p-3">تاريخ القيد</th>
+                              <th className="p-3 text-center">الإجراءات</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-700">
+                            {transactions.map(t => (
+                              <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-3 font-mono font-bold text-slate-900">{t.invoiceNumber}</td>
+                                <td className="p-3 font-bold">{t.clientName}</td>
+                                <td className="p-3">{t.serviceName}</td>
+                                <td className="p-3 font-mono">{t.govFee.toFixed(2)} ر.س</td>
+                                <td className="p-3 font-mono">{t.officeFee.toFixed(2)} ر.س</td>
+                                <td className="p-3 font-mono text-slate-500">{t.tax.toFixed(2)} ر.س</td>
+                                <td className="p-3 font-mono font-bold text-amber-800">{t.total.toFixed(2)} ر.س</td>
+                                <td className="p-3 text-slate-500">{new Date(t.date).toLocaleDateString('ar-SA')}</td>
+                                <td className="p-3 font-sans">
+                                  <div className="flex justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedTx(t);
+                                        setIsInvoiceOpen(true);
+                                      }}
+                                      className="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-300 rounded text-[11px] font-bold transition flex items-center gap-1"
+                                      title="معاينة الفاتورة"
+                                    >
+                                      <Eye className="w-3.5 h-3.5 text-sky-600" />
+                                      <span>معاينة</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedTx(t);
+                                        setIsInvoiceOpen(true);
+                                        setTimeout(() => {
+                                          window.print();
+                                        }, 180);
+                                      }}
+                                      className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 border border-amber-600 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-3xs"
+                                      title="طباعة الفاتورة مباشرة"
+                                    >
+                                      <Printer className="w-3.5 h-3.5" />
+                                      <span>طباعة</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteTransaction(t.id)}
+                                      className="p-1 border border-slate-150 text-red-650 hover:bg-red-50 hover:text-red-700 rounded transition"
+                                      title="إزالة القيد"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {adminTab === 'services' && (
+              <div className="space-y-8 animate-fade-in font-sans">
+                
+                {/* WELCOME MESSAGE MANAGEMENT CARD */}
+                <div className="bg-gradient-to-l from-slate-900 to-slate-850 text-white rounded-2xl p-6 shadow-xl border border-slate-800 space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-4">
+                    <div>
+                      <h3 className="font-extrabold text-amber-505 text-lg flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-amber-400" />
+                        <span>إدارة والتحكم بالرسالة الترحيبية المميزة (للزوار والعملاء)</span>
+                      </h3>
+                      <p className="text-slate-400 text-xs mt-1 font-sans">
+                        صياغة النص الترحيبي العريض والمثبت الذي يشاهده المستفيدون فور مراجعة دليل خدمات مكتب سما المملكة بالرئيسية.
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 font-bold px-3 py-1 rounded-full border border-amber-500/20">
+                      بوابة التخصيص الفوري
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Form Input fields */}
+                    <div className="lg:col-span-2 space-y-4">
+                      <label className="block text-slate-300 font-bold text-xs font-sans">نص الرسالة الترحيبية المقترح:</label>
+                      <textarea
+                        value={welcomeEditor}
+                        onChange={(e) => setWelcomeEditor(e.target.value)}
+                        placeholder="اكتب هنا الرسالة الترحيبية المميزة للمنصة..."
+                        className="w-full p-4 border border-slate-700 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-sm h-32 bg-slate-950 text-slate-100 leading-relaxed transition-all placeholder:text-slate-600 font-sans"
+                      />
+                      <div className="flex justify-between items-center text-[11px] text-slate-400 pr-1">
+                        <span>* التكرير والأسلوب الودي يشجع العملاء على حجز معاملاتهم بثقة أكبر.</span>
+                        <span className="font-mono text-slate-500">حجم المدخلات: <strong className="text-slate-300">{welcomeEditor.length}</strong> حرف</span>
+                      </div>
+
+                      <div className="flex items-center gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWelcomeMessage(welcomeEditor);
+                            setSaveSuccessMsg(true);
+                            setTimeout(() => setSaveSuccessMsg(false), 3000);
+                          }}
+                          className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-black px-6 py-2.5 rounded-lg text-xs shadow-md transition duration-150 flex items-center gap-2 active:scale-98 cursor-pointer"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>حفظ وتعميم الرسالة بالمنصة فوراً</span>
+                        </button>
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const defaultMsg = 'أهلاً ومرحباً بكم في منصة مكتب سما المملكة للخدمات المتكاملة وتخليص المعاملات الإلكترونية الحكومية. نسعد بخدمتكم وتخليص كافة معاملاتكم بكل دقة وأمان وسرعة بإشراف نخبة من المختصين والمهنيين.';
+                            setWelcomeEditor(defaultMsg);
+                          }}
+                          className="bg-slate-800 hover:bg-slate-755 text-slate-305 font-bold px-4 py-2.5 rounded-lg text-xs border border-slate-700 transition duration-150"
+                        >
+                          استعادة النص الافتراضي
+                        </button>
+                      </div>
+
+                      {saveSuccessMsg && (
+                        <div className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 p-3 rounded-lg text-xs font-bold animate-pulse flex items-center gap-2 font-sans">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>تم تحديث وتعميم الرسالة الترحيبية بنجاح! سيراها الآن جميع مستخدمي وزوار الواجهة المباشرة.</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Previews panel */}
+                    <div className="bg-slate-950/65 rounded-xl border border-slate-800 p-4 space-y-3.5 flex flex-col justify-between">
+                      <div className="space-y-2">
+                        <span className="text-[10px] bg-slate-850 text-slate-300 font-bold px-2 py-0.5 rounded border border-slate-700">معاينة حية فورية لوجه الصرف</span>
+                        <p className="text-[11px] text-slate-550 leading-relaxed font-sans">هكذا تظهر الرسالة تماماً لعملائك الكرام بصدر صفحة التبويب الرئيسية:</p>
+                      </div>
+
+                      {/* Micro mockup client rendering */}
+                      <div className="bg-slate-905 border border-slate-800 rounded-lg p-4 relative overflow-hidden select-none">
+                        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-slate-800">
+                          <span className="w-2h-2 rounded-full bg-red-500"></span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-yellow-500"></span>
+                          <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                          <span className="text-[10px] text-slate-600 font-mono ml-auto">sama-sa.com</span>
+                        </div>
+                        <div className="bg-slate-950/85 rounded p-3 border border-amber-500/25 relative">
+                          <div className="absolute top-0 right-0 w-1 h-full bg-amber-500"></div>
+                          <div className="flex items-center gap-1 text-[8px] text-amber-500 font-extrabold mb-1.5 font-sans">
+                            <Sparkles className="w-2.5 h-2.5 text-amber-450" />
+                            <span>البيان الترحيبي</span>
+                          </div>
+                          <p className="text-[9px] text-slate-300 leading-normal line-clamp-4 font-sans whitespace-pre-wrap select-text">
+                            {welcomeEditor || "أهلاً ومرحباً بكم مع مكتب سما المملكة للخدمات..."}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <p className="text-[10px] text-amber-500/70 font-sans leading-normal text-center bg-amber-500/5 py-1.5 rounded-lg border border-amber-500/10">
+                        * يتم الحفظ التلقائي في قواعد التخزين المحلية للمتصفح.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* STATUS MESSAGES MANAGEMENT CARD */}
+                <div className="bg-gradient-to-l from-slate-900 to-slate-850 text-white rounded-2xl p-6 shadow-xl border border-slate-800 space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-4">
+                    <div>
+                      <h3 className="font-extrabold text-amber-500 text-lg flex items-center gap-2">
+                        <Sparkles className="w-5 h-5 text-amber-400" />
+                        <span>تعديل وتخصيص رسائل حالات الطلبات والتواصل التلقائي</span>
+                      </h3>
+                      <p className="text-slate-400 text-xs mt-1 font-sans">
+                        تحرير وتهيئة الردود والإفادات المباشرة التي تظهر للعملاء فور الاستفسار وتتبع معاملاتهم حسب الوضع المالي والعملياتي للطلب.
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 font-bold px-3 py-1 rounded-full border border-amber-500/20">
+                      قنوات الحالة التفاعلية
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Status 1: Pending */}
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-amber-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-550"></span>
+                          رسالة حالة قيد الانتظار لمراجعة الإدارة (Pending)
+                        </span>
+                      </div>
+                      <textarea
+                        value={statusMsgPending}
+                        onChange={(e) => setStatusMsgPending(e.target.value)}
+                        placeholder="ماذا يظهر للعميل عندما يكون الطلب معلقاً بانتظار المراجعة الإدارية..."
+                        className="w-full p-3 border border-slate-700 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs h-20 bg-slate-950 text-slate-100 leading-relaxed transition-all placeholder:text-slate-600 font-sans"
+                      />
+                    </div>
+
+                    {/* Status 2: Processing */}
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-blue-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                          رسالة حالة قيد الإنجاز والمعالجة الفورية (Processing)
+                        </span>
+                      </div>
+                      <textarea
+                        value={statusMsgProcessing}
+                        onChange={(e) => setStatusMsgProcessing(e.target.value)}
+                        placeholder="ماذا يظهر للعميل أثناء سير المعاملة ومراجعة الدوائر الحكومية والمختصين..."
+                        className="w-full p-3 border border-slate-700 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs h-20 bg-slate-950 text-slate-100 leading-relaxed transition-all placeholder:text-slate-600 font-sans"
+                      />
+                    </div>
+
+                    {/* Status 3: Completed */}
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-emerald-400 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          رسالة حالة اكتمال المعاملة وصدور الفاتورة (Completed)
+                        </span>
+                      </div>
+                      <textarea
+                        value={statusMsgCompleted}
+                        onChange={(e) => setStatusMsgCompleted(e.target.value)}
+                        placeholder="ماذا يظهر للعميل عندما تنجز المعاملة والطلب المالي بالكامل وتصبح جاهزة..."
+                        className="w-full p-3 border border-slate-700 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs h-20 bg-slate-950 text-slate-100 leading-relaxed transition-all placeholder:text-slate-600 font-sans"
+                      />
+                    </div>
+
+                    {/* Status 4: Cancelled */}
+                    <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-red-450 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                          رسالة حالة الاعتذار أو إلغاء الطلب (Cancelled)
+                        </span>
+                      </div>
+                      <textarea
+                        value={statusMsgCancelled}
+                        onChange={(e) => setStatusMsgCancelled(e.target.value)}
+                        placeholder="ماذا يظهر للعميل في حال رفض أو تعذر إنهاء المعاملة وإلغائها لأسباب تنظيمية..."
+                        className="w-full p-3 border border-slate-700 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs h-20 bg-slate-950 text-slate-100 leading-relaxed transition-all placeholder:text-slate-600 font-sans"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.setItem('sm_status_msg_pending', statusMsgPending);
+                        localStorage.setItem('sm_status_msg_processing', statusMsgProcessing);
+                        localStorage.setItem('sm_status_msg_completed', statusMsgCompleted);
+                        localStorage.setItem('sm_status_msg_cancelled', statusMsgCancelled);
+                        setSaveSuccessStatusMsg(true);
+                        setTimeout(() => setSaveSuccessStatusMsg(false), 3000);
+                      }}
+                      className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-black px-6 py-2.5 rounded-lg text-xs shadow-md transition duration-150 flex items-center gap-2 active:scale-98 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>حفظ وتطبيق رسائل الحالات بالمنصة فوراً</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defPending = 'قيد الانتظار لمراجعة الإدارة - نعتز بثقتكم وسنتولى معالجتها حالاً.';
+                        const defProcessing = 'تحت المعالجة الإجرائية الآن - يتم تنفيذ المعاملة ومراجعة الجهات المختصة.';
+                        const defCompleted = 'مكتملة ومستند الفاتورة جاهز - نسعد دائماً برضاكم التام.';
+                        const defCancelled = 'ملغية - نرجو التواصل مع الإدارة للاستفسار والتحقق.';
+                        
+                        setStatusMsgPending(defPending);
+                        setStatusMsgProcessing(defProcessing);
+                        setStatusMsgCompleted(defCompleted);
+                        setStatusMsgCancelled(defCancelled);
+                      }}
+                      className="bg-slate-800 hover:bg-slate-755 text-slate-305 font-bold px-4 py-2.5 rounded-lg text-xs border border-slate-700 transition duration-150"
+                    >
+                      استعادة الإفادات الافتراضية
+                    </button>
+                    
+                    {saveSuccessStatusMsg && (
+                      <span className="text-emerald-400 text-xs font-bold animate-pulse font-sans flex items-center gap-1.5 mr-auto">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>تم حفظ وتطبيق رسائل حالات المعاملات بنجاح!</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* BACKGROUND SETTINGS AND AI CONFIGURATION CARD */}
+                <div className="bg-gradient-to-l from-slate-900 to-slate-850 text-white rounded-2xl p-6 shadow-xl border border-slate-800 space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-4">
+                    <div>
+                      <h3 className="font-extrabold text-amber-500 text-lg flex items-center gap-2">
+                        <Sun className="w-5 h-5 text-amber-400" />
+                        <span>التحكم بالخلفية الإيمانية وإعدادات الذكاء الاصطناعي لمكة المكرمة</span>
+                      </h3>
+                      <p className="text-slate-400 text-xs mt-1 font-sans">
+                        تحرير وتعيين مظهر صور مكة المكرمة المهيبة بخلفية المنصة لتتناسب بذكاء مع الزوار والعملاء.
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-sky-500/10 text-sky-400 font-bold px-3 py-1 rounded-full border border-sky-500/20">
+                      إعدادات مظهر النظام
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Strategy 1: AI Auto */}
+                    <div 
+                      onClick={() => setBgStrategy('ai')}
+                      className={`cursor-pointer group relative border rounded-xl p-4 transition-all hover:border-amber-500/50 ${
+                        bgStrategy === 'ai' 
+                          ? 'bg-slate-950/90 border-amber-500 ring-1 ring-amber-500 shadow-md shadow-amber-500/5' 
+                          : 'bg-slate-950/30 border-slate-800'
+                      }`}
+                    >
+                      <div className="absolute top-2.5 left-2.5 bg-amber-500/10 p-1 rounded-md text-amber-400">
+                        <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                      </div>
+                      <h4 className="font-extrabold text-xs text-amber-500 mb-1.5 flex items-center gap-1">
+                        <span>التبديل التلقائي الذكي</span>
+                      </h4>
+                      <p className="text-[10px] text-slate-400 leading-normal mb-3 font-sans">
+                        تحديد وتعميم الخلفية تلقائياً بناءً على الوقت المحلي للزائر لمطابقة صلواتهم وتوقيت الديار المقدسة.
+                      </p>
+                      <span className="text-[9px] font-bold text-amber-400/80 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10 block text-center">
+                        موصى به للزوار
+                      </span>
+                    </div>
+
+                    {/* Strategy 2: Sunrise */}
+                    <div 
+                      onClick={() => setBgStrategy('sunrise')}
+                      className={`cursor-pointer group relative border rounded-xl overflow-hidden transition-all hover:border-amber-500/50 ${
+                        bgStrategy === 'sunrise' 
+                          ? 'bg-slate-950/90 border-amber-500 ring-1 ring-amber-500' 
+                          : 'bg-slate-950/30 border-slate-800'
+                      }`}
+                    >
+                      <div className="h-20 bg-cover bg-center animate-fade-in" style={{ backgroundImage: `url("${makkahSunriseImg}")` }}></div>
+                      <div className="p-3">
+                        <h4 className="font-extrabold text-xs text-white mb-1 flex items-center gap-1">
+                          <Sun className="w-3 h-3 text-amber-500" />
+                          <span>شروق مكة المكرمة</span>
+                        </h4>
+                        <p className="text-[9px] text-slate-400 leading-normal font-sans">
+                          فرض خلفية الشروق المشرق (ألوان ذهبية دافئة مناسبة لفترة الصباح الباكر والنشاط).
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Strategy 3: Sunset */}
+                    <div 
+                      onClick={() => setBgStrategy('sunset')}
+                      className={`cursor-pointer group relative border rounded-xl overflow-hidden transition-all hover:border-amber-500/50 ${
+                        bgStrategy === 'sunset' 
+                          ? 'bg-slate-950/90 border-amber-500 ring-1 ring-amber-500' 
+                          : 'bg-slate-950/30 border-slate-800'
+                      }`}
+                    >
+                      <div className="h-20 bg-cover bg-center animate-fade-in" style={{ backgroundImage: `url("${makkahSunsetImg}")` }}></div>
+                      <div className="p-3">
+                        <h4 className="font-extrabold text-xs text-white mb-1 flex items-center gap-1">
+                          <Sun className="w-3 h-3 text-amber-600" />
+                          <span>غروب مكة المكرمة</span>
+                        </h4>
+                        <p className="text-[9px] text-slate-400 leading-normal font-sans">
+                          فرض خلفية الغروب المهيب (أصيل مكة الكرمة الهادئ والمريح للأعصاب البصرية).
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Strategy 4: Night */}
+                    <div 
+                      onClick={() => setBgStrategy('night')}
+                      className={`cursor-pointer group relative border rounded-xl overflow-hidden transition-all hover:border-amber-500/50 ${
+                        bgStrategy === 'night' 
+                          ? 'bg-slate-950/90 border-amber-500 ring-1 ring-amber-500' 
+                          : 'bg-slate-950/30 border-slate-800'
+                      }`}
+                    >
+                      <div className="h-20 bg-cover bg-center animate-fade-in" style={{ backgroundImage: `url("${makkahNightImg}")` }}></div>
+                      <div className="p-3">
+                        <h4 className="font-extrabold text-xs text-white mb-1 flex items-center gap-1">
+                          <Moon className="w-3 h-3 text-indigo-400" />
+                          <span>الليل والتهجد بمكة</span>
+                        </h4>
+                        <p className="text-[9px] text-slate-400 leading-normal font-sans">
+                          فرض خلفية ليل الحرم المكي الشريف الاستثنائي المضاء بمصابيح المنارة الباهرة.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                   <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800 flex flex-col lg:flex-row justify-between items-center gap-3 text-xs font-sans">
+                    <p className="text-slate-350">
+                      💡 <span className="font-bold text-white">معلومة الإدارة:</span> يثق زوار مكتب سما المملكة بمدى اهتمامكم الدؤوب وتجهيز الخدمات بأرقى معايير التقنية السعودية المحكمة. يمكن للزوار أيضاً التحكم بموضوع المظهر عبر التبويب العائم أو قفل التحكم به تماماً.
+                    </p>
+                    <div className="flex flex-wrap gap-2.5 items-center justify-end">
+                      <span className="bg-amber-600 text-slate-950 text-[10px] font-black px-3 py-2 rounded-lg">الخلفية النشطة بالنظام الآن: {getBgNameAr(bgStrategy)}</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowBgSelector(!showBgSelector)}
+                        className={`text-[10px] font-bold px-3 py-2 rounded-lg border transition-all cursor-pointer ${
+                          showBgSelector 
+                            ? 'bg-emerald-600/10 hover:bg-emerald-650/20 text-emerald-400 border-emerald-500/20' 
+                            : 'bg-amber-600/10 hover:bg-amber-650/20 text-amber-500 border-amber-500/25 animate-pulse'
+                        }`}
+                      >
+                        {showBgSelector ? 'تعطيل الايقونة العائمة للزوار ✘' : 'تمكين الايقونة العائمة للزوار ✔'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SOCIAL MEDIA MANAGEMENT CARD */}
+                <div className="bg-gradient-to-l from-slate-900 to-slate-850 text-white rounded-2xl p-6 shadow-xl border border-slate-800 space-y-6">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 border-b border-slate-800 pb-4">
+                    <div>
+                      <h3 className="font-extrabold text-amber-500 text-lg flex items-center gap-2">
+                        <Users className="w-5 h-5 text-amber-400" />
+                        <span>إدارة والتحكم بروابط منصات التواصل الاجتماعي للمكتب</span>
+                      </h3>
+                      <p className="text-slate-400 text-xs mt-1 font-sans">
+                        تعديل وتعيين روابط حسابات التواصل الاجتماعي الرسمية للمكتب لتظهر بشكل أنيق وتفاعلي في فوتر وأقسام المنصة لتمكين تواصل المستفيدين المباشر والموثوق.
+                      </p>
+                    </div>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 font-bold px-3 py-1 rounded-full border border-amber-500/20 animate-pulse">
+                      بوابة الربط والتواصل الاجتماعي
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 font-sans">
+                    {/* Twitter/X */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Twitter className="w-4 h-4 text-slate-300" />
+                        <span>منصة X / تويتر:</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialTwitter}
+                        onChange={(e) => setSocialTwitter(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://x.com/username"
+                      />
+                    </div>
+
+                    {/* Facebook */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Facebook className="w-4 h-4 text-blue-500" />
+                        <span>فيسبوك (Facebook):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialFacebook}
+                        onChange={(e) => setSocialFacebook(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://facebook.com/page"
+                      />
+                    </div>
+
+                    {/* Instagram */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Instagram className="w-4 h-4 text-pink-500" />
+                        <span>إنستغرام (Instagram):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialInstagram}
+                        onChange={(e) => setSocialInstagram(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://instagram.com/username"
+                      />
+                    </div>
+
+                    {/* LinkedIn */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Linkedin className="w-4 h-4 text-sky-500" />
+                        <span>لينكد إن (LinkedIn):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialLinkedin}
+                        onChange={(e) => setSocialLinkedin(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://linkedin.com/company/name"
+                      />
+                    </div>
+
+                    {/* YouTube */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Youtube className="w-4 h-4 text-red-500" />
+                        <span>يوتيوب (YouTube):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialYoutube}
+                        onChange={(e) => setSocialYoutube(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://youtube.com/@channel"
+                      />
+                    </div>
+
+                    {/* Snapchat */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Smartphone className="w-4 h-4 text-yellow-400" />
+                        <span>سناب شات (Snapchat):</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialSnapchat}
+                        onChange={(e) => setSocialSnapchat(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://snapchat.com/add/username"
+                      />
+                    </div>
+
+                    {/* WhatsApp */}
+                    <div className="bg-slate-950/40 p-4 rounded-xl border border-slate-800 space-y-2 lg:col-span-3">
+                      <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <PhoneCall className="w-4 h-4 text-emerald-505 animate-pulse" />
+                        <span>رابط أو رقم واتساب للتواصل السريع والطلبات الاستثنائية:</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={socialWhatsapp}
+                        onChange={(e) => setSocialWhatsapp(e.target.value)}
+                        className="w-full p-2.5 bg-slate-900 text-slate-100 border border-slate-700 rounded-lg text-xs focus:outline-none focus:border-amber-500 transition-all font-sans"
+                        placeholder="https://wa.me/96650XXXXXXXX"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-2 font-sans">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.setItem('sm_social_twitter', socialTwitter);
+                        localStorage.setItem('sm_social_facebook', socialFacebook);
+                        localStorage.setItem('sm_social_instagram', socialInstagram);
+                        localStorage.setItem('sm_social_linkedin', socialLinkedin);
+                        localStorage.setItem('sm_social_snapchat', socialSnapchat);
+                        localStorage.setItem('sm_social_youtube', socialYoutube);
+                        localStorage.setItem('sm_social_whatsapp', socialWhatsapp);
+                        setSaveSuccessSocialMedia(true);
+                        setTimeout(() => setSaveSuccessSocialMedia(false), 3000);
+                      }}
+                      className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-black px-6 py-2.5 rounded-lg text-xs shadow-md transition duration-150 flex items-center gap-2 active:scale-98 cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>حفظ وتطبيق روابط التواصل الاجتماعي</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSocialTwitter('https://x.com/sama_kingdom');
+                        setSocialFacebook('https://facebook.com/sama_kingdom');
+                        setSocialInstagram('https://instagram.com/sama_kingdom');
+                        setSocialLinkedin('https://linkedin.com/company/sama_kingdom');
+                        setSocialSnapchat('https://snapchat.com/add/sama_kingdom');
+                        setSocialYoutube('https://youtube.com/@sama_kingdom');
+                        setSocialWhatsapp('https://wa.me/966500000000');
+                        setSaveSuccessSocialMedia(true);
+                        setTimeout(() => setSaveSuccessSocialMedia(false), 3000);
+                      }}
+                      className="bg-slate-800 hover:bg-slate-755 text-slate-305 font-bold px-4 py-2.5 rounded-lg text-xs border border-slate-700 transition duration-150"
+                    >
+                      استعادة الروابط الافتراضية
+                    </button>
+
+                    {saveSuccessSocialMedia && (
+                      <span className="text-emerald-400 text-xs font-bold animate-pulse font-sans flex items-center gap-1.5 mr-auto">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>تم التحديث والمزامنة في كافة أجزاء المنصة بنجاح!</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Add Service Section with 2 columns: left Form, right Live Preview */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  
+                  {/* Left (Span 2) - Form Block */}
+                  <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-205 shadow-md">
+                  <h3 className="font-extrabold text-slate-900 text-lg border-b border-slate-200 pb-3 mb-6 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-amber-100 p-1.5 rounded-lg border border-amber-200">
+                        <PlusCircle className="w-5 h-5 text-amber-700" />
+                      </div>
+                      <span className="font-black text-slate-950">إضافة وتهيئة خدمة إدارية جديدة للمكتب</span>
+                    </div>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-sans">بوابة مسؤولي النظام</span>
+                  </h3>
+
+                  {/* Form Controls - Left (Span 2) */}
+                  <form onSubmit={handleAddServiceSubmit} className="space-y-6 text-xs font-sans">
+                      
+                      {/* Section 1: Basic Identity & Classification */}
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-5 space-y-4 shadow-2xs">
+                        <div className="flex items-center gap-2 text-slate-900 font-extrabold pb-2 border-b border-slate-200">
+                          <div className="w-6 h-6 rounded-md bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-700 font-mono text-xs">١</div>
+                          <span className="text-sm font-black">المعلومات الأساسية والهوية التصنيفية</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-slate-800 font-bold mb-1.5">* اسم الخدمة بالكامل (أو نوع المعاملة):</label>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                required
+                                value={newSrvName}
+                                onChange={(e) => setNewSrvName(e.target.value)}
+                                placeholder="مثلاً: تأشيرة علاجية أو سياحية خاصة"
+                                className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm bg-white text-slate-900 transition-colors"
+                              />
+                              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                                <FileText className="h-4.5 w-4.5 text-slate-400" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-800 font-bold mb-1.5">* فئة الخدمة الرئيسية التابعة:</label>
+                            <div className="relative">
+                              <select
+                                value={newSrvCategory}
+                                onChange={(e) => setNewSrvCategory(e.target.value)}
+                                className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm text-slate-900 transition-colors"
+                              >
+                                {categories.map(cat => (
+                                  <option key={cat.id} value={cat.id}>{cat.nameAr}</option>
+                                ))}
+                              </select>
+                              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                                <ListFilter className="h-4.5 w-4.5 text-slate-400" />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2">
+                          <div>
+                            <label className="block text-slate-800 font-bold mb-1.5">* الرمز والأيقونة التعبيرية الممثلة للخدمة:</label>
+                            
+                            {/* Filter Input for Dynamic Selection */}
+                            <div className="mb-2.5 relative">
+                              <input
+                                type="text"
+                                placeholder="🔍 ابحـث باسم أو وظيفة الأيقونـة... (مثال: طيران، سيارة، ملف، مالية، سفر)"
+                                value={iconSearchNew}
+                                onChange={(e) => setIconSearchNew(e.target.value)}
+                                className="w-full pr-10 pl-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-xs bg-white text-slate-900 transition-colors font-sans"
+                              />
+                              <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                <span className="text-slate-400 text-xs">🔎</span>
+                              </div>
+                              {iconSearchNew && (
+                                <button
+                                  type="button"
+                                  onClick={() => setIconSearchNew('')}
+                                  className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 hover:text-slate-650 font-bold text-xs"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="relative">
+                              <select
+                                value={newSrvIcon}
+                                onChange={(e) => setNewSrvIcon(e.target.value)}
+                                className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm text-slate-900 transition-colors font-sans"
+                              >
+                                {(() => {
+                                  const filtered = AVAILABLE_ICONS.filter(icon => 
+                                    icon.value.toLowerCase().includes(iconSearchNew.toLowerCase()) || 
+                                    icon.label.toLowerCase().includes(iconSearchNew.toLowerCase())
+                                  );
+                                  if (filtered.length === 0) {
+                                    return (
+                                      <option value="FileText" disabled>⚠️ لا توجد أيقونة مطابقة لبحثك</option>
+                                    );
+                                  }
+                                  return filtered.map(icon => (
+                                    <option key={icon.value} value={icon.value}>{icon.label}</option>
+                                  ));
+                                })()}
+                              </select>
+                              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                                <span className="text-slate-500 font-bold">★</span>
+                              </div>
+                            </div>
+                            <p className="text-[10px] text-slate-550 mt-1">تُعرض الأيقونة المختارة في بطاقات الخدمات على الواجهة العامة للتوضيح البصري للعملاء والمستفيدين.</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-5 space-y-4 shadow-2xs">
+                        <div className="flex items-center gap-2 text-slate-900 font-extrabold pb-2 border-b border-slate-200">
+                          <div className="w-6 h-6 rounded-md bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-700 font-mono text-xs font-black">٢</div>
+                          <span className="text-sm font-black">الضوابط المالية وجداول التسعير الفني</span>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-3xs space-y-1.5 text-right">
+                            <label className="block text-slate-800 font-bold text-xs flex items-center gap-1 justify-start">
+                              <Coins className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>* أتعاب وتكاليف تعقيب المكتب (ر.س):</span>
+                            </label>
+                            <input
+                              type="number"
+                              required
+                              value={newSrvOfficeFee}
+                              onChange={(e) => setNewSrvOfficeFee(Number(e.target.value) || 0)}
+                              placeholder="0.00"
+                              className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm font-mono text-slate-900"
+                            />
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 bg-slate-50 p-1.5 rounded font-sans leading-none">
+                              <span>ضريبة مضافة مقيدة (15%):</span>
+                              <strong className="font-mono text-emerald-800">{(newSrvOfficeFee * 0.15).toFixed(2)} ر.س</strong>
+                            </div>
+                          </div>
+
+                          <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-3xs space-y-1.5 text-right">
+                            <label className="block text-slate-800 font-bold text-xs flex items-center gap-1 justify-start">
+                              <Receipt className="w-3.5 h-3.5 text-blue-600" />
+                              <span>* الرسوم الحكومية المستحقة للدولة (ر.س):</span>
+                            </label>
+                            <input
+                              type="number"
+                              required
+                              value={newSrvGovFee}
+                              onChange={(e) => setNewSrvGovFee(Number(e.target.value) || 0)}
+                              placeholder="0.00"
+                              className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm font-mono text-slate-900"
+                            />
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 bg-slate-50 p-1.5 rounded font-sans leading-none">
+                              <span>الحالة الضريبية في سما:</span>
+                              <strong className="text-blue-850 font-black">معفى من الضريبة</strong>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Direct automatic fee assessment display */}
+                        <div className="bg-emerald-50/65 border border-emerald-150/80 rounded-lg p-3.5 text-xs flex justify-between items-center">
+                          <div className="space-y-1">
+                            <h5 className="font-extrabold text-emerald-950">إقرار كلي لحاصل تكلفة الخدمة المقترحة:</h5>
+                            <p className="text-[10px] text-emerald-800 leading-snug">يتكفل المستفيد بدفع هذا الإجمالي تلقائياً في دورة المعاملة شاملة أتعاب سما الإدارية والضريبة الرسمية.</p>
+                          </div>
+                          <div className="text-left">
+                            <span className="text-[10px] text-emerald-600 font-sans block">إجمالي التكلفة الشاملة:</span>
+                            <strong className="text-base text-emerald-950 font-black font-mono">{(newSrvGovFee + newSrvOfficeFee * 1.15 + newSrvAdditionalFees.reduce((sum, f) => sum + f.amount, 0)).toFixed(2)} ر.س</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section 3: Operational Steps & Clear Descriptions */}
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-5 space-y-4 shadow-2xs">
+                        <div className="flex items-center gap-2 text-slate-900 font-extrabold pb-2 border-b border-slate-200">
+                          <div className="w-6 h-6 rounded-md bg-indigo-50 border border-indigo-150 flex items-center justify-center text-indigo-754 font-mono text-xs font-black">٣</div>
+                          <span className="text-sm font-black">الشرح التفصيلي ودليل تفويض الإنجاز</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-800 font-bold mb-1.5">* وصف المعاملة ومتطلبات الأوراق واللوائح التوثيقية:</label>
+                          <textarea
+                            required
+                            value={newSrvDesc}
+                            onChange={(e) => setNewSrvDesc(e.target.value)}
+                            placeholder="اكتب هنا ما يغطي بالتفصيل كيفية وأبعاد تقديم الإجراء، مثلاً الأوراق والوثائق المطلوبة، الشروط السنية أو المالية، والمهلة الزمنية المتوقعة للإصدار..."
+                            className="w-full p-3 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm h-28 bg-white text-slate-900 leading-relaxed transition-all placeholder:text-slate-400"
+                          ></textarea>
+
+                          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-1 font-sans">
+                            <span>* يرجى إيضاح المتطلبات بدقة لتجنيب العميل الرفض من المسار الحكومي.</span>
+                            <span className="font-mono font-bold">المدخلات: {newSrvDesc.length} حرف</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section 4: Additional Custom Fees (e.g. Expedited processing, Translation, etc) */}
+                      <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-5 space-y-4 shadow-2xs">
+                        <div className="flex items-center gap-2 text-slate-900 font-extrabold pb-2 border-b border-slate-200">
+                          <div className="w-6 h-6 rounded-md bg-indigo-50 border border-indigo-150 flex items-center justify-center text-indigo-754 font-mono text-xs font-black">٤</div>
+                          <span className="text-sm font-black">الرسوم والمدفوعات الإضافية المخصصة (اختياري)</span>
+                        </div>
+
+                        <p className="text-slate-500 text-[11px] leading-relaxed">
+                          يمكنك تعريف بنود مالية ورسوم إضافية تابعة لهذه الخدمة وتضاف لقائمتها مثل (رسوم المعالجة السريعة، أتعاب الترجمة والتوثيق، رسوم شحنات عاجلة).
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-3 border-b border-slate-150">
+                          <div>
+                            <label className="block text-slate-700 font-bold mb-1">اسم البند أو الرسم الإضافي:</label>
+                            <input
+                              type="text"
+                              value={tempFeeNameNew}
+                              onChange={(e) => setTempFeeNameNew(e.target.value)}
+                              placeholder="مثلاً: رسوم معالجة مستعجلة، رسوم ترجمة"
+                              className="w-full p-2 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-800 font-sans font-medium"
+                            />
+                          </div>
+                          <div className="flex items-end gap-2">
+                            <div className="flex-1">
+                              <label className="block text-slate-700 font-bold mb-1">مقدار الرسم (ر.س):</label>
+                              <input
+                                type="number"
+                                value={tempFeeAmountNew}
+                                onChange={(e) => setTempFeeAmountNew(e.target.value !== '' ? Number(e.target.value) : '')}
+                                placeholder="0.00"
+                                className="w-full p-2 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-800 font-mono font-medium"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!tempFeeNameNew.trim()) {
+                                  alert('يرجى كتابة اسم البند الإضافي أولاً.');
+                                  return;
+                                }
+                                if (tempFeeAmountNew === '' || Number(tempFeeAmountNew) <= 0) {
+                                  alert('يرجى تحديد سعر مناسب للبند الإضافي.');
+                                  return;
+                                }
+                                const newFee = {
+                                  id: `fee-${Date.now()}`,
+                                  name: tempFeeNameNew.trim(),
+                                  amount: Number(tempFeeAmountNew)
+                                };
+                                setNewSrvAdditionalFees([...newSrvAdditionalFees, newFee]);
+                                setTempFeeNameNew('');
+                                setTempFeeAmountNew('');
+                              }}
+                              className="bg-indigo-600 hover:bg-indigo-550 text-white font-bold py-2 px-3 rounded text-xs transition h-9 cursor-pointer flex items-center justify-center gap-1 font-sans shadow-3xs"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>إضافة</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {newSrvAdditionalFees.length > 0 ? (
+                          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                            <h5 className="font-bold text-slate-800 text-[11px]">البنود المضافة حالياً للمعاملة:</h5>
+                            <div className="grid grid-cols-1 gap-2">
+                              {newSrvAdditionalFees.map((fee) => (
+                                <div key={fee.id} className="bg-white border border-slate-205 p-2 rounded-lg flex items-center justify-between text-xs font-sans shadow-3xs">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                    <span className="font-bold text-slate-800">{fee.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="font-mono text-indigo-700 font-extrabold">{fee.amount.toFixed(2)} ر.س</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setNewSrvAdditionalFees(newSrvAdditionalFees.filter(f => f.id !== fee.id))}
+                                      className="p-1 text-red-500 hover:bg-red-50 rounded"
+                                      title="حذف البند"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 bg-slate-100/50 rounded-lg border border-dashed border-slate-200 text-slate-400 text-[11px]">
+                            لم يتم إضافة أي أتعاب أو رسوم مخصصة بعد لهذه الخدمة (اختياري).
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-end pt-3 border-t border-slate-200 gap-3 font-sans">
+                        <button
+                          type="submit"
+                          className="bg-slate-950 border border-slate-900 hover:bg-slate-850 text-white font-black px-10 py-3 rounded-lg text-sm shadow-md transition duration-150 flex items-center gap-2 active:scale-98"
+                        >
+                          <PlusCircle className="w-5 h-5" />
+                          <span>تفعيل وجدولة الخدمة بالمنصة فوراً</span>
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+
+                  {/* Interactive Live Card Preview - Right (Span 1) */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col justify-between space-y-4 font-sans">
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                        <span className="font-extrabold text-slate-800 text-xs">معاينة تفاعلية حية (البطاقة الذكية للخدمة)</span>
+                        <span className="text-[9px] bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded font-bold animate-pulse">مباشر</span>
+                      </div>
+                      
+                      {/* Simulated public service card layout */}
+                      <div className="bg-white rounded-xl shadow border border-slate-200 p-5 flex flex-col justify-between relative group hover:shadow-md transition-all antialiased text-right">
+                        <div>
+                          {/* Card Top */}
+                          <div className="flex justify-between items-start mb-4">
+                            <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                              <RenderServiceIcon iconName={newSrvIcon} className="w-6 h-6 text-amber-700" />
+                            </div>
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wider font-sans">
+                              {getCategoryName(newSrvCategory)}
+                            </span>
+                          </div>
+
+                          {/* Title and details */}
+                          <h3 className="text-base font-black text-slate-900 mb-2 line-clamp-1">
+                            {newSrvName.trim() || 'اسم الخدمة التجريبي'}
+                          </h3>
+                          <p className="text-slate-600 text-[11px] leading-relaxed mb-4 line-clamp-3 min-h-[48px]">
+                            {newSrvDesc.trim() || 'الشرح والتوضيح ومسار المعاملة الحكومية وسيظهر هنا بالكامل للعملاء والمستفيدين فور رغبة الحجز...'}
+                          </p>
+                        </div>
+
+                        <div className="border-t border-slate-105 pt-4 mt-2 space-y-2 text-xs">
+                          <div className="flex justify-between font-sans">
+                            <span className="text-slate-500">رسوم جهات الدولة:</span>
+                            <span className="font-bold text-slate-950 font-mono">{newSrvGovFee.toFixed(2)} ر.س</span>
+                          </div>
+                          <div className="flex justify-between font-sans">
+                            <span className="text-slate-500">أتعاب المكتب المعيارية:</span>
+                            <span className="font-bold text-slate-950 font-mono">{(newSrvOfficeFee * 1.15).toFixed(2)} ر.س</span>
+                          </div>
+                          <div className="flex justify-between text-slate-400 text-[10px] pr-2 border-r-2 border-slate-200 font-sans font-medium">
+                            <span>شامل ضريبة مضافة:</span>
+                            <span className="font-mono font-bold text-slate-700">{(newSrvOfficeFee * 0.15).toFixed(2)} ر.s</span>
+                          </div>
+                          
+                          {newSrvAdditionalFees.length > 0 && (
+                            <div className="pt-1.5 border-t border-slate-100 space-y-1">
+                              <span className="text-[10px] text-indigo-700 font-bold block mb-1">الرسوم الإضافية المعرّفة:</span>
+                              {newSrvAdditionalFees.map(f => (
+                                <div key={f.id} className="flex justify-between text-[11px] font-sans text-slate-600 pr-2 border-r border-indigo-200">
+                                  <span>{f.name}:</span>
+                                  <span className="font-mono font-bold text-slate-800">{f.amount.toFixed(2)} ر.س</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex justify-between border-t border-dashed border-slate-150 pt-2 font-black text-amber-800 text-sm font-sans">
+                            <span>التكلفة الإجمالية:</span>
+                            <span className="font-mono font-bold text-amber-950">{(newSrvGovFee + newSrvOfficeFee * 1.15 + newSrvAdditionalFees.reduce((sum, f) => sum + f.amount, 0)).toFixed(2)} ر.س</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#f1f5f9] border border-slate-200 p-3 rounded-lg text-[10px] text-slate-600 space-y-1 font-sans">
+                      <strong className="text-slate-900 block font-bold mb-1">💡 إرشادات الإعداد الفني للخدمات الجديد:</strong>
+                      <p>١. الأمانات المعفاة هي مدفوعات الدولة المباشرة عبر منابر (أبشر، قوى، بلدي).</p>
+                      <p>٢. يلتزم تطبيق الفاتورة بالضريبة السائدة ١٥٪ على أتعاب تعقيب المكتب فحسب.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* --- CATEGORY MANAGEMENT SECTION --- */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-205 shadow-sm space-y-6 text-right font-sans">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-indigo-50 p-2 rounded-xl border border-indigo-150 text-indigo-700">
+                        <FolderPlus className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-950 text-sm">إدارة وتخصيص الفئات الإدارية للمكتب</h4>
+                        <p className="text-slate-500 text-[11px] mt-0.5 font-sans">يمكنك إضافة فئات تصنيفية جديدة مخصصة للمكتب بخلاف فئات النظام الافتراضية مع تحديد ألوان مميزة.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs font-sans">
+                    
+                    {/* Add Category Form (Col 1) */}
+                    <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl space-y-4 text-right">
+                      <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-150 pb-2">
+                        <span className="w-2 h-2 rounded-full bg-indigo-550 animate-pulse"></span>
+                        <span className="font-bold">إضافة فئة تصنيف جديدة</span>
+                      </h5>
+
+                      <div className="space-y-3.5">
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 font-sans">معرف الفئة البرمجي (بالإنجليزي - فريد):</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثلاً: health, insurance, commercial"
+                            value={newCatId}
+                            onChange={(e) => setNewCatId(e.target.value.toLowerCase().trim().replace(/[^a-z0-9_-]/g, ''))}
+                            className="w-full p-2.5 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 font-sans">اسم الفئة باللغة العربية لعرضه للعملاء:</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثلاً: معاملات الرعاية والخدمات الطبية"
+                            value={newCatNameAr}
+                            onChange={(e) => setNewCatNameAr(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-705 font-bold mb-1 font-sans">اللون البصري المخصص للفئة:</label>
+                          <select
+                            value={newCatColor}
+                            onChange={(e) => setNewCatColor(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800"
+                          >
+                            <option value="indigo">💜 بنفسجي داكن (Indigo)</option>
+                            <option value="purple">🔮 أرجواني ساطع (Purple)</option>
+                            <option value="blue">💙 أزرق بحري (Blue)</option>
+                            <option value="emerald">💚 أخضر زمردي (Emerald)</option>
+                            <option value="amber">💛 ذهبي خريفي (Amber)</option>
+                            <option value="orange">🧡 برتقالي مشرق (Orange)</option>
+                            <option value="rose">🌸 وردي مخملي (Rose)</option>
+                            <option value="cyan">💎 تركوازي سماوي (Cyan)</option>
+                          </select>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!newCatId || !newCatNameAr) {
+                              alert('من فضلك أكمل كافة خانات الفئة بالشرح الصحيح أولاً.');
+                              return;
+                            }
+                            if (categories.some(c => c.id === newCatId)) {
+                              alert('هذا المعرف متواجد بالفعل، يرجى تدوين رمز تعريفي فريد.');
+                              return;
+                            }
+                            const updated = [...categories, { id: newCatId, nameAr: newCatNameAr, color: newCatColor }];
+                            setCategories(updated);
+                            setNewCatId('');
+                            setNewCatNameAr('');
+                            setNewCatColor('indigo');
+                            alert('تم تسجيل وتفعيل الفئة التصنيفية الجديدة بالمكتب بنجاح!');
+                          }}
+                          className="w-full bg-slate-950 hover:bg-slate-850 text-white font-black py-2.5 px-4 rounded-lg transition text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                        >
+                          <PlusCircle className="w-4 h-4" />
+                          <span>تنشيط وتفعيل الفئة الجديدة</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Display Current Registered Categories list (Col 2 & 3 - Span 2) */}
+                    <div className="md:col-span-2 border border-slate-200 p-5 rounded-xl space-y-4 bg-slate-50/40 text-right">
+                      <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-150 pb-2">
+                        <span>إحصائيات وقائمة الفئات المهيأة بالمكتب ({categories.length})</span>
+                      </h5>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[295px] overflow-y-auto pr-1">
+                        {categories.map(cat => {
+                          const catStyles = getCategoryStyles(cat.id);
+                          const isDefault = ['visa', 'gov', 'transport', 'other'].includes(cat.id);
+                          const associatedCount = services.filter(s => s.category === cat.id).length;
+
+                          return (
+                            <div 
+                              key={cat.id} 
+                              className="bg-white border border-slate-205 p-3.5 rounded-xl flex items-center justify-between shadow-3xs group hover:border-slate-300 transition-all text-right"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`w-3 h-3 rounded-full ${catStyles.bg} border-2 border-white shadow-3xs flex-shrink-0`}></span>
+                                <div>
+                                  <strong className="text-slate-850 text-xs block leading-tight font-extrabold">{cat.nameAr}</strong>
+                                  <span className="text-[9px] text-slate-400 font-mono block mt-0.5">الرمز: {cat.id} • مرتبط بـ ({associatedCount}) خدمات</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold border ${catStyles.badge} font-mono uppercase leading-none`}>
+                                  {cat.color}
+                                </span>
+                                {!isDefault && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (associatedCount > 0) {
+                                        alert('لا يمكن حذف هذه الفئة لأنها مستخدمة حالياً ببعض الخدمات النشطة بالمكتب. يرجى تعديل تلك الخدمات أولاً.');
+                                        return;
+                                      }
+                                      if (confirm(`هل أنت متأكد من حذف الفئة المخصصة "${cat.nameAr}" كلياً من لوحة تحكم المكتب؟`)) {
+                                        setCategories(categories.filter(c => c.id !== cat.id));
+                                      }
+                                    }}
+                                    className="p-1 border border-transparent text-red-500 hover:bg-red-50 hover:border-red-100 rounded-lg transition-colors cursor-pointer"
+                                    title="إزالة هذه الفئة"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl text-[10px] text-amber-850 leading-relaxed font-sans">
+                        💡 <strong className="font-extrabold text-amber-900">إرشادات السلامة التصنيفية:</strong> للتأكد من المحافظة على دقة وسلامة ملفات حجز فواتير العملاء السابقة، فإن الفئات الأربعة الافتراضية بنظام سما المملكة (تعقيب، تأشيرات، شحن بري، عامة مخصصة) هي فئات مصونة وثابتة من الحذف نهائياً. الفئات الجديدة التي تنشئها يدوياً تكون قابلة للإزالة التامة بمجرد سحب الخدمات التابعة لها وإخلائها مسبقاً من لوحة التحكم.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Directory listing and search tools */}
+                <div className="space-y-5 bg-slate-50/70 border border-slate-200 rounded-2xl p-6">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                    <div>
+                      <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
+                        <ListFilter className="w-5 h-5 text-amber-600" />
+                        <span>دليل الخدمات وباقات العمليات النشطة بالمكتب</span>
+                      </h3>
+                      <p className="text-slate-500 text-[11px] mt-1 font-sans">
+                        ابحث وقارن ورتب جميع المعاملات المهيأة على منصة مكتب سما المملكة بمرونة تامة ونمط عصري.
+                      </p>
+                    </div>
+
+                    {/* Summary indicator */}
+                    <span className="text-xs font-bold text-slate-600 bg-white border border-slate-200 px-3.5 py-1.5 rounded-xl shadow-3xs font-sans self-start md:self-auto">
+                      إجمالي الخدمات: <strong className="text-slate-900">{services.length} خدمات</strong>
+                    </span>
+                  </div>
+
+                  {/* Highly polished control bar with filters, search and sorting */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 items-end font-sans">
+                    
+                    {/* Search box - 5 cols */}
+                    <div className="lg:col-span-5 space-y-1.5">
+                      <label className="block text-slate-700 font-extrabold text-[11px]">
+                        {lang === 'en' ? 'Search by service name or details:' : 'ابحث باسم الخدمة أو الشرح التفصيلي:'}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={servicesSearchQuery}
+                          onChange={(e) => setServicesSearchQuery(e.target.value)}
+                          placeholder={lang === 'en' ? 'Type the service you are looking for...' : 'اكتب المعاملة التي تبحث عنها هنا...'}
+                          className="w-full pr-10 pl-3.5 py-2 border border-slate-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs bg-white text-slate-900 placeholder:text-slate-400 font-sans shadow-3xs transition-all"
+                        />
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <Search className="h-4 w-4 text-slate-400" />
+                        </div>
+                        {servicesSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setServicesSearchQuery('')}
+                            className="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 hover:text-slate-700 font-bold"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Category Filter - 4 cols */}
+                    <div className="lg:col-span-4 space-y-1.5">
+                      <label className="block text-slate-700 font-extrabold text-[11px]">
+                        {lang === 'en' ? 'Filter by service category:' : 'تصفية بحسب فئة المعاملات:'}
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={servicesFilterCategory}
+                          onChange={(e) => setServicesFilterCategory(e.target.value)}
+                          className="w-full pr-10 pl-3 py-2 border border-slate-300 rounded-xl bg-white text-xs text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-3xs appearance-none transition-all"
+                        >
+                          <option value="all">
+                            {lang === 'en' ? '📁 All Categories & Specialties' : '📁 جميع الفئات والتخصصات بالمكتب'}
+                          </option>
+                          {categories.map(cat => {
+                            let icon = '📁';
+                            if (cat.id === 'visa') icon = '🛂';
+                            else if (cat.id === 'gov') icon = '🏛️';
+                            else if (cat.id === 'transport') icon = '🚚';
+                            else if (cat.id === 'other') icon = '⚙️';
+                            return (
+                              <option key={cat.id} value={cat.id}>
+                                {icon} {lang === 'en' ? (cat.nameEn || cat.nameAr) : cat.nameAr}
+                              </option>
+                            );
+                          })}
+                        </select>
+                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+                          ▼
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Sorting Selection - 3 cols */}
+                    <div className="lg:col-span-3 space-y-1.5">
+                      <label className="block text-slate-700 font-extrabold text-[11px]">
+                        {lang === 'en' ? 'Sort services guide by:' : 'ترتيب عرض قائمة التحكم:'}
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={servicesSortKey}
+                          onChange={(e) => setServicesSortKey(e.target.value as any)}
+                          className="w-full pr-8 pl-3 py-2 border border-slate-300 rounded-xl bg-white text-xs text-slate-900 font-bold focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 shadow-3xs appearance-none transition-all"
+                        >
+                          <option value="name-asc">
+                            {lang === 'en' ? '🔤 Name (A - Z)' : '🔤 اسم الخدمة (أ - ي)'}
+                          </option>
+                          <option value="name-desc">
+                            {lang === 'en' ? '🔤 Name (Z - A)' : '🔤 اسم الخدمة (ي - أ)'}
+                          </option>
+                          <option value="total-desc">
+                            {lang === 'en' ? '💰 Cost: High to Low' : '💰 التكلفة: الأعلى أولاً'}
+                          </option>
+                          <option value="total-asc">
+                            {lang === 'en' ? '💰 Cost: Low to High' : '💰 التكلفة: الأقل أولاً'}
+                          </option>
+                        </select>
+                        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+                          <ArrowUpDown className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Indicator showing filters applied */}
+                  {(servicesSearchQuery || servicesFilterCategory !== 'all') && (
+                    <div className="flex justify-between items-center text-[10px] bg-amber-500/5 text-amber-800 border border-amber-500/10 rounded-lg py-1.5 px-3 font-sans">
+                      <div className="flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                        <span>تم تطبيق الفرز المتطور بنجاح.</span>
+                      </div>
+                      <button 
+                        onClick={() => {
+                          setServicesSearchQuery('');
+                          setServicesFilterCategory('all');
+                          setServicesSortKey('name-asc');
+                        }}
+                        className="font-bold underline hover:text-amber-950 transition-colors"
+                      >
+                        إعادة تهيئة الافتراضي ✕
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Main Render Grid of cards */}
+                  {(() => {
+                    const filteredAndSortedServices = services.filter(s => {
+                      const matchesSearch = servicesSearchQuery.trim() === '' || 
+                        s.name.toLowerCase().includes(servicesSearchQuery.toLowerCase()) ||
+                        s.description.toLowerCase().includes(servicesSearchQuery.toLowerCase());
+                      const matchesCategory = servicesFilterCategory === 'all' || s.category === servicesFilterCategory;
+                      return matchesSearch && matchesCategory;
+                    }).sort((a, b) => {
+                      const costA = a.govFee + a.officeFee * 1.15;
+                      const costB = b.govFee + b.officeFee * 1.15;
+                      if (servicesSortKey === 'name-asc') return a.name.localeCompare(b.name, 'ar');
+                      if (servicesSortKey === 'name-desc') return b.name.localeCompare(a.name, 'ar');
+                      if (servicesSortKey === 'total-asc') return costA - costB;
+                      if (servicesSortKey === 'total-desc') return costB - costA;
+                      return 0;
+                    });
+
+                    if (filteredAndSortedServices.length === 0) {
+                      return (
+                        <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center space-y-3 shadow-3xs animate-fade-in">
+                          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 mx-auto">
+                            <Search className="w-6 h-6" />
+                          </div>
+                          <h4 className="font-extrabold text-slate-700 text-sm">لم يتم العثور على أي نتائج مطابقة</h4>
+                          <p className="text-slate-400 text-xs font-sans max-w-sm mx-auto leading-normal">
+                            لم نجد خدمة تابعة لـ <strong className="text-slate-700">"{servicesSearchQuery}"</strong> أو الفئة المذكورة. يرجى مراجعة التهجئة أو التصفية مجدداً.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setServicesSearchQuery('');
+                              setServicesFilterCategory('all');
+                            }}
+                            className="bg-slate-900 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg hover:bg-slate-800 transition-all font-sans"
+                          >
+                            عرض كافة الخدمات النشطة
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {filteredAndSortedServices.map(s => {
+                          const isEditing = editingService && editingService.id === s.id;
+
+                          if (isEditing && editingService) {
+                            const addFeesTotal = (editingService.additionalFees || []).reduce((sum, f) => sum + f.amount, 0);
+                            const taxTotal = editingService.officeFee * 0.15;
+                            const combineTotal = editingService.govFee + editingService.officeFee + taxTotal + addFeesTotal;
+
+                            return (
+                              <form 
+                                key={s.id} 
+                                onSubmit={handleUpdateServiceSubmit}
+                                className="bg-amber-50/40 border-2 border-amber-400 rounded-2xl p-5 shadow-inner space-y-4 text-xs font-sans animate-fade-in"
+                              >
+                                <div className="flex justify-between items-center border-b border-amber-200 pb-2.5">
+                                  <span className="font-black text-amber-950 text-sm flex items-center gap-1.5">
+                                    <Sparkles className="w-4 h-4 text-amber-600 animate-spin" />
+                                    <span>تحديث المعاملة: {s.name}</span>
+                                  </span>
+                                  <button 
+                                    type="button" 
+                                    onClick={() => setEditingService(null)}
+                                    className="text-slate-500 hover:text-slate-800 font-extrabold text-sm"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                  <div>
+                                    <label className="block text-slate-700 font-bold mb-1">اسم الخدمة المعروض:</label>
+                                    <input
+                                      type="text"
+                                      required
+                                      value={editingService.name}
+                                      onChange={(e) => setEditingService({ ...editingService, name: e.target.value })}
+                                      className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 bg-white text-slate-900"
+                                    />
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-slate-700 font-bold mb-1">الرسوم الحكومية (ر.س):</label>
+                                      <input
+                                        type="number"
+                                        required
+                                        value={editingService.govFee}
+                                        onChange={(e) => setEditingService({ ...editingService, govFee: Number(e.target.value) || 0 })}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 font-mono bg-white text-slate-900"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-slate-700 font-bold mb-1">أتعاب المكتب (ر.س):</label>
+                                      <input
+                                        type="number"
+                                        required
+                                        value={editingService.officeFee}
+                                        onChange={(e) => setEditingService({ ...editingService, officeFee: Number(e.target.value) || 0 })}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 font-mono bg-white text-slate-900"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-slate-900 font-bold mb-1">فئة الخدمة:</label>
+                                      <select
+                                        value={editingService.category}
+                                        onChange={(e) => setEditingService({ ...editingService, category: e.target.value })}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-xs text-slate-900 font-medium font-sans"
+                                      >
+                                        {categories.map(cat => (
+                                          <option key={cat.id} value={cat.id}>{cat.nameAr}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-slate-700 font-bold mb-1">الأيقونة البصرية:</label>
+                                      <div className="space-y-1.5">
+                                        <input
+                                          type="text"
+                                          placeholder="🔍 تصفية الأيقونات..."
+                                          value={iconSearchEdit}
+                                          onChange={(e) => setIconSearchEdit(e.target.value)}
+                                          className="w-full px-2 py-1.5 border border-slate-300 rounded focus:outline-none focus:border-amber-500 text-[10px] bg-white text-slate-900 font-sans"
+                                        />
+                                        <select
+                                          value={editingService.icon}
+                                          onChange={(e) => setEditingService({ ...editingService, icon: e.target.value })}
+                                          className="w-full p-2 border border-slate-300 rounded-lg bg-white text-xs text-slate-900 font-sans"
+                                        >
+                                          {(() => {
+                                            const filtered = AVAILABLE_ICONS.filter(icon => 
+                                              icon.value.toLowerCase().includes(iconSearchEdit.toLowerCase()) || 
+                                              icon.label.toLowerCase().includes(iconSearchEdit.toLowerCase())
+                                            );
+                                            if (filtered.length === 0) {
+                                              return <option value="FileText" disabled>⚠️ لا توجد أيقونة مطابقة</option>;
+                                            }
+                                            return filtered.map(icon => (
+                                              <option key={icon.value} value={icon.value}>{icon.label}</option>
+                                            ));
+                                          })()}
+                                        </select>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-slate-700 font-bold mb-1">الشرح التفصيلي للعميل:</label>
+                                    <textarea
+                                      required
+                                      value={editingService.description}
+                                      onChange={(e) => setEditingService({ ...editingService, description: e.target.value })}
+                                      className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 h-16 bg-white text-slate-900"
+                                    ></textarea>
+                                  </div>
+
+                                  {/* Additional Custom Fees for Editing */}
+                                  <div className="bg-slate-100/60 border border-slate-200 rounded-xl p-3.5 space-y-3.5 text-right font-sans">
+                                    <label className="block text-slate-900 font-extrabold text-[11px] border-b border-slate-200 pb-1 flex items-center gap-1.5">
+                                      <PlusCircle className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                                      <span>الرسوم وتكلفة الإنجاز الإضافية التابعة (اختياري):</span>
+                                    </label>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <div>
+                                        <input
+                                          type="text"
+                                          value={tempFeeNameEdit}
+                                          onChange={(e) => setTempFeeNameEdit(e.target.value)}
+                                          placeholder="اسم الرسم الإضافي (ترجمة، مستعجل...)"
+                                          className="w-full p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500 text-[10px] bg-white text-slate-900 font-sans"
+                                        />
+                                      </div>
+                                      <div className="flex gap-1.5">
+                                        <input
+                                          type="number"
+                                          value={tempFeeAmountEdit}
+                                          onChange={(e) => setTempFeeAmountEdit(e.target.value !== '' ? Number(e.target.value) : '')}
+                                          placeholder="السعر (ر.س)"
+                                          className="flex-1 p-2 border border-slate-300 rounded focus:outline-none focus:border-amber-500 text-[10px] font-mono bg-white text-slate-900"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!tempFeeNameEdit.trim()) {
+                                              alert('يرجى تحديد اسم الرسم الإضافي.');
+                                              return;
+                                            }
+                                            if (tempFeeAmountEdit === '' || Number(tempFeeAmountEdit) <= 0) {
+                                              alert('يرجى كتابة سعر صحيح أكبر من الصفر.');
+                                              return;
+                                            }
+                                            const updatedFees = [
+                                              ...(editingService.additionalFees || []),
+                                              {
+                                                id: `fee-${Date.now()}`,
+                                                name: tempFeeNameEdit.trim(),
+                                                amount: Number(tempFeeAmountEdit)
+                                              }
+                                            ];
+                                            setEditingService({
+                                              ...editingService,
+                                              additionalFees: updatedFees
+                                            });
+                                            setTempFeeNameEdit('');
+                                            setTempFeeAmountEdit('');
+                                          }}
+                                          className="bg-slate-900 hover:bg-slate-800 text-white font-black px-2.5 rounded text-[10px] h-8 align-middle flex items-center justify-center font-sans shadow-3xs cursor-pointer flex-shrink-0"
+                                        >
+                                          إضافة
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {(editingService.additionalFees && editingService.additionalFees.length > 0) ? (
+                                      <div className="space-y-1.5 max-h-32 overflow-y-auto pr-1">
+                                        {editingService.additionalFees.map(fee => (
+                                          <div key={fee.id} className="bg-white border border-slate-200 p-1.5 rounded flex items-center justify-between text-[11px] font-sans shadow-3xs">
+                                            <span className="font-bold text-slate-700">{fee.name}</span>
+                                            <div className="flex items-center gap-2">
+                                              <span className="font-mono text-indigo-700 font-bold">{fee.amount.toFixed(2)} ر.س</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const filtered = (editingService.additionalFees || []).filter(f => f.id !== fee.id);
+                                                  setEditingService({
+                                                    ...editingService,
+                                                    additionalFees: filtered
+                                                  });
+                                                }}
+                                                className="p-0.5 text-red-500 hover:bg-red-50 rounded cursor-pointer"
+                                                title="حذف الرسم"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-center py-2 border border-dashed border-slate-300 rounded text-slate-400 text-[10px]">
+                                        لم يتم إضافة أي أتعاب إضافية مخصصة بعد (اختياري).
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="bg-amber-100/40 p-3 rounded-lg border border-amber-200 text-[10px] font-mono select-none">
+                                    <span className="block text-amber-900 font-bold mb-1">الاحتساب الضريبي والمالي للعميل (15%):</span>
+                                    <div className="space-y-0.5 text-slate-650 font-semibold">
+                                      <p className="flex justify-between"><span>أتعاب سما المعتمدة:</span> <span>{editingService.officeFee.toFixed(2)} ر.س</span></p>
+                                      <p className="flex justify-between"><span>الضريبة المضافة للخدمة الأساسية:</span> <span>{taxTotal.toFixed(2)} ر.س</span></p>
+                                      {addFeesTotal > 0 && (
+                                        <div className="pt-0.5 border-t border-amber-205 space-y-0.5 text-slate-600 font-medium">
+                                          <p className="font-sans font-bold text-[9px] text-amber-900">الرسوم الإضافية:</p>
+                                          {(editingService.additionalFees || []).map(f => (
+                                            <p className="flex justify-between" key={f.id}>
+                                              <span>{f.name}:</span>
+                                              <span>{f.amount.toFixed(2)} ر.س</span>
+                                            </p>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <p className="flex justify-between border-t border-amber-200 pt-0.5 text-slate-900 font-extrabold"><span>المجموع الكلي المقدر بالدليل:</span> <span>{combineTotal.toFixed(2)} ر.س</span></p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex gap-2 justify-end pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingService(null)}
+                                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-lg border border-slate-300 transition text-xs"
+                                  >
+                                    إلغاء
+                                  </button>
+                                  <button
+                                    type="submit"
+                                    className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-slate-950 font-black rounded-lg shadow-sm transition text-xs"
+                                  >
+                                    حفظ التعديلات بالمكتب
+                                  </button>
+                                </div>
+                              </form>
+                            );
+                          }
+
+                          const taxTotal = s.officeFee * 0.15;
+                          const combineTotal = s.govFee + s.officeFee + taxTotal;
+
+                          const catStyles = getCategoryStyles(s.category);
+                          const badgeStyle = catStyles.badge;
+
+                          return (
+                            <div 
+                              key={s.id} 
+                              className="group relative bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1 flex flex-col justify-between overflow-hidden"
+                            >
+                              {/* Aesthetic corner color banner depending on category */}
+                              <div className={`absolute top-0 right-0 left-0 h-1.5 ${catStyles.bg}`}></div>
+
+                              <div>
+                                <div className="flex justify-between items-start mb-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className={`p-3 rounded-xl border transition-colors ${catStyles.icon}`}>
+                                      {renderServiceIcon(s.icon, "w-6 h-6")}
+                                    </div>
+                                    <div>
+                                      <h4 className="font-extrabold text-sm text-slate-900 group-hover:text-amber-800 transition-colors leading-tight mb-1">{s.name}</h4>
+                                      <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${badgeStyle} font-sans`}>
+                                        {getCategoryName(s.category)}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {/* Action button triggers list */}
+                                  <div className="flex gap-1.5 opacity-90 group-hover:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingService(s)}
+                                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200/60 rounded-lg text-[10px] font-bold transition-all"
+                                      title="تعديل تفاصيل وأسعار الخدمة"
+                                    >
+                                      تعديل الأسعار
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteService(s.id)}
+                                      className="p-1.5 border border-slate-100 text-red-600 hover:bg-red-50 hover:text-red-700 rounded-lg transition-colors"
+                                      title="إزالة وإخفاء الخدمة"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <p className="text-slate-600 text-xs leading-relaxed mb-5 min-h-[40px] font-sans line-clamp-3">
+                                  {s.description}
+                                </p>
+                              </div>
+
+                              {/* Financial ledger summary block with great visual cues */}
+                              <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 text-xs font-mono space-y-2 mt-auto">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-500 font-sans flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                    <span>رسوم الدولة (مدفوعة ومباشرة):</span>
+                                  </span> 
+                                  <strong className="text-slate-900 font-bold">{s.govFee.toFixed(2)} ر.س</strong>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-500 font-sans flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                    <span>أتعاب المعاملة لدى سما:</span>
+                                  </span> 
+                                  <strong className="text-slate-900 font-bold">{s.officeFee.toFixed(2)} ر.س</strong>
+                                </div>
+                                <div className="flex justify-between items-center text-[11px] text-slate-550 pr-2 border-r-2 border-slate-200 select-none">
+                                  <span className="font-sans">مشمول ضريبة مضافة (15%):</span>
+                                  <span>{taxTotal.toFixed(2)} ر.س</span>
+                                </div>
+                                
+                                <div className="flex justify-between items-center border-t border-dashed border-slate-200 pt-2 font-black text-amber-900 text-[13px] font-sans">
+                                  <span className="flex items-center gap-1">
+                                    <Coins className="w-4 h-4 text-amber-600" />
+                                    <span>المجموع الشامل التقديري:</span>
+                                  </span>
+                                  <strong className="font-mono text-amber-950 text-sm">{combineTotal.toFixed(2)} ر.س</strong>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+            
+            {adminTab === 'whatsapp' && (
+              <div className="space-y-8 animate-fade-in font-sans">
+                
+                {/* WHATSAPP OVERVIEW & STATISTICS CARD */}
+                <div className="bg-white p-6 rounded-xl shadow border border-slate-200">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                        <MessageSquare className="w-5 h-5 text-emerald-600" />
+                        <span>بوابة إشعار العملاء والربط التلقائي بـ WhatsApp</span>
+                      </h3>
+                      <p className="text-slate-500 text-xs mt-1">
+                        يقوم النظام الذكي تلقائياً بإرسال رسائل WhatsApp مخصصة إلى جوال العميل فور تغيير حالة المعاملة إلى <strong className="text-emerald-700 font-bold">"مكتملة ومستند الفاتورة جاهز"</strong> أو <strong className="text-red-700 font-bold">"ملغية"</strong> عبر البوابة الرقمية النشطة.
+                      </p>
+                    </div>
+                    <div className="flex gap-2.5">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-full select-none">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>بوابة WhatsApp النشطة: متصلة (MOCK_API)</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Operational statistics */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-6">
+                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block">إجمالي الإشعارات الصادرة</span>
+                        <strong className="text-xl font-black text-slate-955 font-mono mt-0.5 block">{whatsappLogs.length}</strong>
+                      </div>
+                      <Send className="w-5 h-5 text-slate-400" />
+                    </div>
+
+                    <div className="bg-emerald-50/50 border border-emerald-100 p-4 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-emerald-800 font-bold block">نسبة نجاح التوصيل الفوري</span>
+                        <strong className="text-xl font-black text-emerald-950 font-mono mt-0.5 block">
+                          {whatsappLogs.length > 0 
+                            ? `${Math.round((whatsappLogs.filter(l => l.success).length / whatsappLogs.length) * 100)}%` 
+                            : '100%'
+                          }
+                        </strong>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block">إرسال يدوي / تجريبي</span>
+                        <strong className="text-xl font-black text-slate-955 font-mono mt-0.5 block">
+                          {whatsappLogs.filter(l => l.message.includes('[إرسال تجريبي]')).length || 0}
+                        </strong>
+                      </div>
+                      <Sparkles className="w-5 h-5 text-amber-500" />
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+                      <div>
+                        <span className="text-[10px] text-slate-500 font-bold block">متوسط زمن الاستجابة</span>
+                        <strong className="text-xl font-black text-slate-955 font-mono mt-0.5 block">240ms</strong>
+                      </div>
+                      <Activity className="w-5 h-5 text-slate-400" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* TEMPLATE CUSTOMIZATION SECTION */}
+                <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-200/80 space-y-6">
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+                    <div className="bg-emerald-500/10 p-2 rounded-xl text-emerald-600 border border-emerald-500/20">
+                      <MessageSquare className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-base">تخصيص قوالب الرسائل التلقائية وحقول الدمج الديناميكية</h4>
+                      <p className="text-slate-500 text-xs mt-0.5">خصص صياغة إشعارات الواتساب لكل حالة وحافط على تفاعل عملائك بذكاء من خلال المتغيرات التلقائية.</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    
+                    {/* Template Pending Editing Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-center border-b border-indigo-100 pb-3">
+                        <h5 className="font-extrabold text-sm text-indigo-950 flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                          <span>قالب إشعار: قيد الانتظار الإداري</span>
+                        </h5>
+                        <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">Pending</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
+                        <textarea
+                          value={whatsappTemplatePending}
+                          onChange={(e) => setWhatsappTemplatePending(e.target.value)}
+                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 leading-relaxed font-sans h-28"
+                          placeholder="اكتب رسالة قيد الانتظار..."
+                        />
+                      </div>
+
+                      {/* Clickable Quick Insert Tokens */}
+                      <div className="space-y-1 pt-1">
+                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplatePending(p => p + ' {clientName}')}
+                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم العميل"
+                          >
+                            {"{clientName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplatePending(p => p + ' {serviceName}')}
+                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم الخدمة"
+                          >
+                            {"{serviceName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplatePending(p => p + ' {bookingId}')}
+                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج رقم المعاملة"
+                          >
+                            {"{bookingId}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplatePending(p => p + ' {status}')}
+                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج حالة الطلب الفعلي"
+                          >
+                            {"{status}"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pre-computation of real time preview with a dummy user */}
+                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
+                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
+                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
+                          {whatsappTemplatePending
+                            .replace(/{name}/g, 'ريما بنت أحمد العسيري')
+                            .replace(/{clientName}/g, 'ريما بنت أحمد العسيري')
+                            .replace(/{service}/g, 'تفويض تأشيرة الكتروني')
+                            .replace(/{serviceName}/g, 'تفويض تأشيرة الكتروني')
+                            .replace(/{status}/g, 'قيد المراجعة والتدقيق الإداري والمحاسبي')
+                            .replace(/{phone}/g, '0567891234')
+                            .replace(/{bookingId}/g, 'REQ-10492')
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Template Processing Editing Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-center border-b border-amber-100 pb-3">
+                        <h5 className="font-extrabold text-sm text-amber-950 flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                          <span>قالب إشعار: قيد معالجة المعاملة</span>
+                        </h5>
+                        <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-mono font-bold">Processing</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
+                        <textarea
+                          value={whatsappTemplateProcessing}
+                          onChange={(e) => setWhatsappTemplateProcessing(e.target.value)}
+                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600 leading-relaxed font-sans h-28"
+                          placeholder="اكتب رسالة قيد المعالجة..."
+                        />
+                      </div>
+
+                      {/* Clickable Quick Insert Tokens */}
+                      <div className="space-y-1 pt-1">
+                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {clientName}')}
+                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم العميل"
+                          >
+                            {"{clientName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {serviceName}')}
+                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم الخدمة"
+                          >
+                            {"{serviceName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {bookingId}')}
+                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج رقم المعاملة"
+                          >
+                            {"{bookingId}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {status}')}
+                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج حالة الطلب الفعلي"
+                          >
+                            {"{status}"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pre-computation of real time preview with a dummy user */}
+                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
+                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
+                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
+                          {whatsappTemplateProcessing
+                            .replace(/{name}/g, 'خالد محمد الشهراني')
+                            .replace(/{clientName}/g, 'خالد محمد الشهراني')
+                            .replace(/{service}/g, 'تمديد تأشيرة زيارة')
+                            .replace(/{serviceName}/g, 'تمديد تأشيرة زيارة')
+                            .replace(/{status}/g, 'تحت المعالجة الإجرائية من قبل فريق المراجعين')
+                            .replace(/{phone}/g, '0502468135')
+                            .replace(/{bookingId}/g, 'REQ-29401')
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Template Completed Editing Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-center border-b border-emerald-100 pb-3">
+                        <h5 className="font-extrabold text-sm text-emerald-950 flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span>قالب إشعار: اكتمال المعاملة والطلب</span>
+                        </h5>
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-mono font-bold">Completed</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
+                        <textarea
+                          value={whatsappTemplateCompleted}
+                          onChange={(e) => setWhatsappTemplateCompleted(e.target.value)}
+                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 leading-relaxed font-sans h-28"
+                          placeholder="اكتب رسالة طلب مكتمل..."
+                        />
+                      </div>
+
+                      {/* Clickable Quick Insert Tokens */}
+                      <div className="space-y-1 pt-1">
+                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {clientName}')}
+                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم العميل"
+                          >
+                            {"{clientName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {serviceName}')}
+                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم الخدمة"
+                          >
+                            {"{serviceName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {bookingId}')}
+                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج رقم المعاملة"
+                          >
+                            {"{bookingId}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {status}')}
+                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج حالة الطلب الفعلي"
+                          >
+                            {"{status}"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pre-computation of real time preview with a dummy user */}
+                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
+                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
+                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
+                          {whatsappTemplateCompleted
+                            .replace(/{name}/g, 'عبد الرحمن سفيان الحركان')
+                            .replace(/{clientName}/g, 'عبد الرحمن سفيان الحركان')
+                            .replace(/{service}/g, 'تأشيرة عمل مهندس')
+                            .replace(/{serviceName}/g, 'تأشيرة عمل مهندس')
+                            .replace(/{status}/g, 'مكتملة ومستحقة الدفع')
+                            .replace(/{phone}/g, '0501234567')
+                            .replace(/{bookingId}/g, 'REQ-48192')
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Template Cancelled Editing Card */}
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-center border-b border-red-100 pb-3">
+                        <h5 className="font-extrabold text-sm text-red-950 flex items-center gap-1.5">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                          <span>قالب إشعار: إلغاء المعاملة والطلب</span>
+                        </h5>
+                        <span className="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-mono font-bold">Cancelled</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
+                        <textarea
+                          value={whatsappTemplateCancelled}
+                          onChange={(e) => setWhatsappTemplateCancelled(e.target.value)}
+                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 leading-relaxed font-sans h-28"
+                          placeholder="اكتب رسالة تم الإلغاء..."
+                        />
+                      </div>
+
+                      {/* Clickable Quick Insert Tokens */}
+                      <div className="space-y-1 pt-1">
+                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {clientName}')}
+                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم العميل"
+                          >
+                            {"{clientName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {serviceName}')}
+                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج اسم الخدمة"
+                          >
+                            {"{serviceName}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {bookingId}')}
+                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج رقم المعاملة"
+                          >
+                            {"{bookingId}"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {status}')}
+                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
+                            title="إدراج حالة الطلب الفعلي"
+                          >
+                            {"{status}"}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Pre-computation of real time preview with a dummy user */}
+                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
+                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
+                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
+                          {whatsappTemplateCancelled
+                            .replace(/{name}/g, 'سارة بنت حمود الطويرقي')
+                            .replace(/{clientName}/g, 'سارة بنت حمود الطويرقي')
+                            .replace(/{service}/g, 'تأشيرة زيارة عائلية')
+                            .replace(/{serviceName}/g, 'تأشيرة زيارة عائلية')
+                            .replace(/{status}/g, 'ملغية ومسحوبة')
+                            .replace(/{phone}/g, '0559876543')
+                            .replace(/{bookingId}/g, 'REQ-38291')
+                          }
+                        </p>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* TOKENS CHEAT SHEET & RESET BUTTONS */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
+                  <div>
+                    <span className="font-extrabold text-slate-900 block mb-2">🏷️ رموز الاختصارات المدعومة داخل القوالب:</span>
+                    <div className="flex flex-wrap gap-2 text-[10px] font-mono">
+                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="الاسم الكامل للعميل">{"{clientName}"} أو {"{name}"} : اسم العميل</span>
+                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="اسم الخدمة المختارة">{"{serviceName}"} أو {"{service}"} : نوع الخدمة</span>
+                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="رقم جوال المستفيد">{"{phone}"} : رقم الجوال</span>
+                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="توصيف حالة الطلب">{"{status}"} : وصف الحالة</span>
+                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="رقم المعاملة الفريد">{"{bookingId}"} : رقم المعاملة</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 w-full md:w-auto self-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWhatsappTemplateCompleted('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {name} المحترم. يسعدنا إبلاغكم بأن معاملتكم لطلب ({service}) قد اكتملت بنجاح ومستند الفاتورة جاهز. شكراً لثقتكم بمكتب سما المملكة للخدمات المتكاملة.');
+                        setWhatsappTemplateCancelled('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {name} المحترم. نود إبلاغكم بأنه تم إلغاء معاملتكم رقم {bookingId} لطلب ({service}). لمزيد من الاستفسارات يرجى الاتصال بإدارة المكتب. شكراً لتفهمكم.');
+                        setWhatsappTemplateProcessing('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. نود إبلاغكم بأن طلبكم رقم {bookingId} لمعاملة ({serviceName}) هو الآن قيد المعالجة الإجرائية من قبل فريق المراجعة والجهات المختصة. سنوافيكم بالتطورات قريباً.');
+                        setWhatsappTemplatePending('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. تم استلام طلبكم رقم {bookingId} لمعاملة ({serviceName}) بنجاح. وهو قيد الانتظار حالياً للمراجعة والتدقيق الإداري. شكراً لثقتكم بمكتب سما المملكة.');
+                        setSaveSuccessWaTemplate(true);
+                        setTimeout(() => setSaveSuccessWaTemplate(false), 3000);
+                      }}
+                      className="px-3 border border-slate-300 text-slate-800 font-bold py-2 bg-white hover:bg-slate-100 rounded-xl transition text-xs flex-1 md:flex-initial"
+                    >
+                      استعادة الافتراضي
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSaveSuccessWaTemplate(true);
+                        setTimeout(() => setSaveSuccessWaTemplate(false), 3000);
+                      }}
+                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-500 font-black rounded-xl border border-slate-700 transition shadow text-xs flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
+                    >
+                      {saveSuccessWaTemplate ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                          <span className="text-emerald-400">تم حفظ القوالب بنجاح!</span>
+                        </>
+                      ) : (
+                        <span>حفظ التعديلات والتخصيص</span>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* LIVE DYNAMIC TEST CONSOLE SECTION */}
+                <div className="bg-gradient-to-l from-slate-900 to-slate-850 p-6 rounded-xl text-white shadow-xl border border-slate-800 space-y-4">
+                  <div>
+                    <h3 className="font-extrabold text-amber-500 text-sm flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span>بوابة الاختبار والتحقق التلقائي المباشر (Simulator Dispatch Console)</span>
+                    </h3>
+                    <p className="text-slate-400 text-xs mt-1 font-sans">
+                      اختبر بث البوابة الرقمية في أي وقت! اختر معاملة من المعاملات النشطة بالنظام ثم حدد حالة الإرسال للبث لترى النتيجة الصادرة والـ Response الآتي من Gateway API بصورة واقعية.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1.5 text-xs">١. اختر معاملة مرجعية للفحص:</label>
+                      <select
+                        value={testConsoleBookingId}
+                        onChange={(e) => setTestConsoleBookingId(e.target.value)}
+                        className="w-full p-2.5 bg-slate-950 text-slate-100 border border-slate-750 rounded-xl focus:outline-none focus:border-amber-500 text-xs"
+                      >
+                        {bookings.map(b => (
+                          <option key={b.id} value={b.id}>
+                            {b.clientName} ({b.serviceName}) - {b.phoneNumber}
+                          </option>
+                        ))}
+                        {bookings.length === 0 && (
+                          <option value="">لا يوجد أي معاملات متاحة للتجربة</option>
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 font-bold mb-1.5 text-xs">٢. اختر حالة البث المنشودة:</label>
+                      <select
+                        value={testConsoleTemplateType}
+                        onChange={(e) => setTestConsoleTemplateType(e.target.value as any)}
+                        className="w-full p-2.5 bg-slate-950 text-slate-100 border border-slate-750 rounded-xl focus:outline-none focus:border-amber-500 text-xs"
+                      >
+                        <option value="pending">قيد الانتظار الإداري (Pending Template)</option>
+                        <option value="processing">قيد معالجة المعاملة (Processing Template)</option>
+                        <option value="completed">اكتمال وتهيئة الفاتورة (Completed Template)</option>
+                        <option value="cancelled">إلغاء المعاملة (Cancelled Template)</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleManualTestWaDispatch}
+                        disabled={testConsoleIsDispatching || !testConsoleBookingId}
+                        className="w-full p-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded-xl transition text-xs flex items-center justify-center gap-2 shadow disabled:bg-slate-700 disabled:text-slate-400"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                        <span>{testConsoleIsDispatching ? 'جاري بث الإجراء للبوابة...' : 'بث واختبار الإرسال الإلكتروني الآن'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* HISTORICAL TRANSMISSION LOGS */}
+                <div className="bg-white p-6 rounded-xl shadow border border-slate-200">
+                  <div className="border-b border-slate-100 pb-3 mb-4 flex justify-between items-center flex-wrap gap-2">
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                        <Activity className="w-4 h-4 text-emerald-600" />
+                        <span>سجل بث وتوصيل إشعارات WhatsApp (تتبع البوابة)</span>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">ملخص بكافة المعاملات الصادرة عبر بوابتنا الحسابية الافتراضية مع الحالة المرجعية للبث.</p>
+                    </div>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm('هل تريد مسح سجل الإشعارات نهائياً؟')) {
+                          setWhatsappLogs([]);
+                        }
+                      }}
+                      className="text-xs text-red-600 hover:text-red-700 font-bold"
+                      disabled={whatsappLogs.length === 0}
+                    >
+                      مسح سجل البث الكلي
+                    </button>
+                  </div>
+
+                  {whatsappLogs.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 border-2 border-dashed border-slate-200 bg-slate-50 rounded-xl">
+                      <MessageSquare className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                      <p className="text-xs font-bold text-slate-500">سجل الإشعارات فارغ تماماً حالياً</p>
+                      <p className="text-[10px] text-slate-400 mt-1">قم بتغيير حالة المستند لأي معاملة بالبوابة إلى مكتمل أو ملغى، أو اضغط على إرسال تجريبي في شريط الاختيار بالأعلى.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-slate-150 rounded-lg">
+                      <table className="w-full text-right text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                            <th className="p-3 text-right">رقم البث / المستفيد</th>
+                            <th className="p-3 text-right">المعاملة المستهدفة</th>
+                            <th className="p-3 text-right">محتوى الرسالة الصادرة</th>
+                            <th className="p-3 text-right">تاريخ وتوقيت الإرسال</th>
+                            <th className="p-3 text-center">حالة العملية</th>
+                            <th className="p-3 text-center">بوابة استجابة المطور (API)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {whatsappLogs.map((log) => (
+                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-3 font-sans">
+                                <div className="font-bold text-slate-850 flex items-center gap-1.5">
+                                  <Smartphone className="w-3.5 h-3.5 text-slate-400" />
+                                  <span>{log.clientName}</span>
+                                </div>
+                                <span className="text-[10px] font-mono text-slate-500 block mt-0.5">{log.phoneNumber}</span>
+                              </td>
+                              
+                              <td className="p-3 font-sans">
+                                <span className="font-bold text-slate-800">{log.serviceName}</span>
+                                <div className="text-[10px] mt-0.5 flex items-center gap-1">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'completed' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
+                                  <span>{log.status === 'completed' ? 'تحديث: مكتمل' : 'تحديث: ملغى'}</span>
+                                </div>
+                              </td>
+
+                              <td className="p-3 max-w-[280px]">
+                                <div className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded border border-slate-150 font-sans leading-relaxed line-clamp-3 hover:line-clamp-none cursor-help transition-all" title={log.message}>
+                                  {log.message}
+                                </div>
+                              </td>
+
+                              <td className="p-3 font-mono text-slate-500">
+                                <span>{new Date(log.sentAt).toLocaleDateString('ar-SA')}</span>
+                                <span className="block text-[10px] text-slate-400 mt-0.5">
+                                  {new Date(log.sentAt).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </span>
+                              </td>
+
+                              <td className="p-3 text-center">
+                                {log.success ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                    <span>بث بنجاح</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-red-50 text-red-800 border border-red-200 px-2.5 py-1 rounded">
+                                    <AlertCircle className="w-3 h-3 text-red-600" />
+                                    <span>فشل الإرسال</span>
+                                  </span>
+                                )}
+                              </td>
+
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    alert(`الاستجابة الرسمية الآتية من بوابة WhatsApp API:\n\n${log.apiResponse}`);
+                                  }}
+                                  className="text-[10px] text-slate-600 border border-slate-200 bg-white hover:bg-slate-100 px-2 py-1 rounded font-mono select-none"
+                                >
+                                  عرض JSON Payload
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+            
+          </div>
+        )}
+      </main>
+
+      {/* FOOTER GENERAL */}
+      <footer className="bg-slate-950 text-slate-500 border-t border-slate-800 py-10 mt-16 font-sans">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 pb-6 border-b border-slate-900">
+            <div>
+              <div className="text-lg font-bold text-white mb-2">مكتب سما المملكة للخدمات المتكاملة</div>
+              <p className="text-xs text-slate-400 max-w-xl leading-normal">
+                المنصة الموحدة الذكية التابعة لمكتب سما المملكة للخدمات وتخليص المعاملات الإلكترونية الحكومية.
+              </p>
+            </div>
+            
+            {/* Social Media Links section */}
+            <div className="flex flex-col items-center md:items-start gap-2.5">
+              <span className="text-[11px] font-bold text-slate-400 self-center md:self-start">شبكات وعناوين التواصل الاجتماعي:</span>
+              <div className="flex flex-wrap gap-2">
+                {socialTwitter && (
+                  <a href={socialTwitter} target="_blank" rel="noopener noreferrer" title="تابعنا على منصة X" className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 text-slate-350 hover:text-white rounded-lg transition-all shadow-sm">
+                    <Twitter className="w-4 h-4" />
+                  </a>
+                )}
+                {socialFacebook && (
+                  <a href={socialFacebook} target="_blank" rel="noopener noreferrer" title="تابعنا على فيسبوك" className="p-2 bg-slate-900 hover:bg-blue-950 border border-slate-800 hover:border-blue-800 text-slate-350 hover:text-blue-550 rounded-lg transition-all shadow-sm">
+                    <Facebook className="w-4 h-4" />
+                  </a>
+                )}
+                {socialInstagram && (
+                  <a href={socialInstagram} target="_blank" rel="noopener noreferrer" title="تابعنا على إنستغرام" className="p-2 bg-slate-900 hover:bg-pink-950 border border-slate-800 hover:border-pink-800 text-slate-350 hover:text-pink-500 rounded-lg transition-all shadow-sm">
+                    <Instagram className="w-4 h-4" />
+                  </a>
+                )}
+                {socialLinkedin && (
+                  <a href={socialLinkedin} target="_blank" rel="noopener noreferrer" title="تابعنا على لينكد إن" className="p-2 bg-slate-900 hover:bg-sky-950 border border-slate-800 hover:border-sky-800 text-slate-350 hover:text-sky-500 rounded-lg transition-all shadow-sm">
+                    <Linkedin className="w-4 h-4" />
+                  </a>
+                )}
+                {socialYoutube && (
+                  <a href={socialYoutube} target="_blank" rel="noopener noreferrer" title="تابعنا على يوتيوب" className="p-2 bg-slate-900 hover:bg-red-950 border border-slate-800 hover:border-red-800 text-slate-350 hover:text-red-500 rounded-lg transition-all shadow-sm">
+                    <Youtube className="w-4 h-4" />
+                  </a>
+                )}
+                {socialSnapchat && (
+                  <a href={socialSnapchat} target="_blank" rel="noopener noreferrer" title="تابعنا على سناب شات" className="p-2 bg-slate-900 hover:bg-yellow-950 border border-slate-800 hover:border-yellow-850 text-slate-350 hover:text-yellow-450 rounded-lg transition-all shadow-sm">
+                    <Smartphone className="w-4 h-4" />
+                  </a>
+                )}
+                {socialWhatsapp && (
+                  <a href={socialWhatsapp} target="_blank" rel="noopener noreferrer" title="تواصل معنا عبر واتساب" className="p-2 bg-slate-900 hover:bg-emerald-950 border border-slate-800 hover:border-emerald-800 text-slate-350 hover:text-emerald-500 rounded-lg transition-all shadow-sm">
+                    <PhoneCall className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+
+            {/* Quick action footer tabs */}
+            <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-400">
+              <button onClick={() => { setActiveTab('home'); window.scrollTo(0,0); }} className="hover:text-amber-500">الرئيسية</button>
+              <span>•</span>
+              <button onClick={() => { setActiveTab('track'); window.scrollTo(0,0); }} className="hover:text-amber-500">الاستعلام المباشر</button>
+              <span>•</span>
+              <button onClick={() => { setActiveTab('admin'); window.scrollTo(0,0); }} className="hover:text-amber-500">منطقة الإدارة المالية</button>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-between items-center text-[11px] gap-2">
+            <div className="flex font-mono text-slate-500 gap-1.5">
+              <span>VAT: 300065432100003</span>
+              <span>•</span>
+              <span className="text-slate-400 font-sans hover:underline cursor-pointer flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+                <span>الامتثال المفتوح ٢٠٢٦</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      {/* --- INTRATIVE MODALS & DIALOGS --- */}
+
+      {/* Admin lock pin dialog passcode */}
+      <PasscodeModal 
+        isOpen={showPasscode}
+        onClose={() => setShowPasscode(false)}
+        onSuccess={handleAdminAuthSuccess}
+      />
+
+      {/* Invoice Details view & Printing dialog */}
+      <InvoiceDetailModal 
+        isOpen={isInvoiceOpen}
+        onClose={() => {
+          setIsInvoiceOpen(false);
+          setSelectedTx(null);
+        }}
+        transaction={selectedTx}
+      />
+
+      {/* Hover Info Popup Service Details cards */}
+      {infoPopupService && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4" dir="rtl">
+          <div className="w-full max-w-md bg-white border border-slate-900 p-6 rounded-lg shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+              <div className="flex items-center gap-2">
+                {renderServiceIcon(infoPopupService.icon, "w-5 h-5 text-amber-500")}
+                <h4 className="font-extrabold text-slate-900 text-base">{infoPopupService.name}</h4>
+              </div>
+              <button 
+                onClick={() => setInfoPopupService(null)} 
+                className="text-slate-400 hover:text-slate-900 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs text-slate-600 leading-relaxed font-sans">
+              <div>
+                <strong className="block text-slate-800 text-xs font-bold mb-1">وصف الإجراء العام:</strong>
+                <p>{infoPopupService.description}</p>
+              </div>
+
+              <div className="bg-slate-50 p-3 rounded-lg border border-slate-150 space-y-1.5 font-mono">
+                {(() => {
+                  const addFeesTotal = (infoPopupService.additionalFees || []).reduce((sum, f) => sum + f.amount, 0);
+                  const taxOffice = infoPopupService.officeFee * 0.15;
+                  const srvTotal = infoPopupService.govFee + infoPopupService.officeFee + taxOffice + addFeesTotal;
+
+                  return (
+                    <>
+                      <p className="flex justify-between items-center bg-white p-2 rounded border border-slate-200">
+                        <span className="font-sans text-slate-500 block">تكاليف الدولة (الوزارات والجهات ورسوم المصدقة):</span>
+                        <strong className="text-slate-900 font-bold block">{infoPopupService.govFee.toFixed(2)} ر.س</strong>
+                      </p>
+                      <p className="flex justify-between items-center bg-white p-2 rounded border border-slate-200">
+                        <span className="font-sans text-slate-500 block">أتعاب مراجعة مكتب سما المملكة الإستخلاصي:</span>
+                        <strong className="text-slate-900 font-bold block">{infoPopupService.officeFee.toFixed(2)} ر.س</strong>
+                      </p>
+                      <p className="flex justify-between items-center bg-white p-2 rounded border border-slate-300">
+                        <span className="font-sans text-slate-500 block">ضريبة القيمة المضافة المحسوبة (15%):</span>
+                        <strong className="text-slate-700 block">{taxOffice.toFixed(2)} ر.س</strong>
+                      </p>
+
+                      {infoPopupService.additionalFees && infoPopupService.additionalFees.length > 0 && (
+                        <div className="p-2 bg-indigo-50/50 border border-indigo-150 rounded space-y-1 text-[11px] font-sans">
+                          <span className="text-indigo-950 font-bold block mb-1">الرسوم والمدفوعات الإضافية المخصصة:</span>
+                          {infoPopupService.additionalFees.map(f => (
+                            <p className="flex justify-between" key={f.id}>
+                              <span className="text-slate-600 font-medium">{f.name}:</span>
+                              <strong className="text-slate-900 font-mono">{f.amount.toFixed(2)} ر.س</strong>
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      <p className="flex justify-between items-center bg-amber-50 p-2.5 rounded border border-amber-300 font-bold leading-normal text-amber-950 font-sans text-sm">
+                        <span>الإجمالي الضريبي التقريبي:</span>
+                        <span className="font-mono">{srvTotal.toFixed(2)} ر.س</span>
+                      </p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="flex gap-2.5 items-start bg-blue-50/50 p-3 border border-blue-200 text-blue-800 rounded-lg text-[11px]">
+                <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <p className="font-medium leading-relaxed">
+                  تحتسب الرسوم بصورة تفصيلية معلنة ولا توجد عمولات مبطنة. سيقوم مراجع الإجراء بالجهة بتسليمك إشعار الفاتورة الضريبية فور اكتمال تعميد الأوراق.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => {
+                  setSelectedServiceId(infoPopupService.id);
+                  setInfoPopupService(null);
+                  document.getElementById('booking-anchor')?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="w-full bg-slate-950 hover:bg-slate-800 text-white py-2.5 font-extrabold rounded text-xs text-center transition-colors"
+              >
+                المضي قدماً بطلب {infoPopupService.name}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- ADMIN DOCUMENT VIEWER MODAL DIALOG --- */}
+      {selectedViewBooking && (() => {
+        const modalFiles = getBookingFiles(selectedViewBooking);
+        const activeFile = previewFile || modalFiles[0];
+        
+        if (!activeFile) return null;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4" dir="rtl">
+            <div className="w-full max-w-4xl bg-white border border-slate-900 p-6 rounded-xl shadow-2xl space-y-4 font-sans flex flex-col md:flex-row gap-6 relative">
+              
+              {/* Sidebar File Selector (Only if there are multiple files) */}
+              {modalFiles.length > 1 && (
+                <div className="w-full md:w-64 border-l border-slate-200 pl-4 flex flex-col space-y-2 flex-shrink-0">
+                  <h5 className="font-extrabold text-xs text-slate-500 tracking-wider mb-2">قائمة المستندات المرفقة ({modalFiles.length}):</h5>
+                  <div className="space-y-1.5 max-h-[450px] overflow-y-auto">
+                    {modalFiles.map((file, idx) => {
+                      const isActive = activeFile.name === file.name;
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setPreviewFile(file)}
+                          className={`w-full text-right p-2.5 rounded-lg border text-xs font-bold transition-all flex items-start gap-2.5 ${
+                            isActive
+                              ? 'bg-emerald-50 text-emerald-950 border-emerald-300 ring-1 ring-emerald-300'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <Paperclip className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isActive ? 'text-emerald-600' : 'text-slate-400'}`} />
+                          <div className="min-w-0 flex-1">
+                            <span className="block truncate" title={file.name}>{file.name}</span>
+                            <span className="block text-[9px] font-mono text-slate-400 mt-0.5">({file.size})</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Main Document Viewer Container */}
+              <div className="flex-1 space-y-4 min-w-0">
+                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="bg-emerald-50 p-2 rounded-lg border border-emerald-150">
+                      <Paperclip className="w-5 h-5 text-emerald-600" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-slate-950 text-base">بوابة استعراض الوثائق والمستندات الرسمية</h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">طلب تعقيب رقم: #{selectedViewBooking.id.substring(3, 9)} للعميل المستفيد: <strong className="text-slate-850 font-bold">{selectedViewBooking.clientName}</strong></p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setSelectedViewBooking(null);
+                      setPreviewFile(null);
+                    }} 
+                    className="text-slate-400 hover:text-slate-900 text-lg font-bold p-1 hover:bg-slate-50 rounded transition cursor-pointer"
+                    title="إغلاق النافذة"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="bg-[#f8fafc] border border-slate-200 rounded-lg p-3.5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <p className="text-slate-700 truncate">
+                        <span className="text-slate-400">اسم الملف المعروض:</span> <strong className="font-sans text-slate-900 select-all" title={activeFile.name}>{activeFile.name}</strong>
+                      </p>
+                      <p className="text-slate-700">
+                        <span className="text-slate-400">حجم المستند:</span> <strong className="font-mono text-slate-800">{activeFile.size}</strong>
+                      </p>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <a
+                        href={activeFile.data}
+                        download={activeFile.name}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded shadow-sm text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>تحميل المستند PDF (دقة كاملة)</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* View Container Frame */}
+                  <div className="bg-slate-100 rounded-lg overflow-hidden border border-slate-200">
+                    <object
+                      data={activeFile.data}
+                      type="application/pdf"
+                      className="w-full h-[450px]"
+                    >
+                      <div className="flex flex-col items-center justify-center p-12 text-center space-y-4 bg-white h-[450px]">
+                        <div className="bg-amber-50 p-3 rounded-full border border-amber-200">
+                          <FileText className="w-10 h-10 text-amber-600" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <h5 className="font-black text-slate-900 text-sm">استعراض PDF التفاعلي غير مدعوم مباشرة في متصفحك</h5>
+                          <p className="text-xs text-slate-500 max-w-md leading-relaxed">
+                            يتعذر إظهار المستند بصيغة PDF مدمجة بسبب قيود العرض الأمنية لبيئة التصفح الحالية. يرجى الضغط على الزر الأخضر بالأعلى لتنزيله مطلعاً عليه بمرونة تامة.
+                          </p>
+                        </div>
+                        <a
+                          href={activeFile.data}
+                          download={activeFile.name}
+                          className="bg-slate-950 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded text-xs inline-flex items-center gap-1.5 shadow transition-colors animate-pulse"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>تنزيل الملف {activeFile.name}</span>
+                        </a>
+                      </div>
+                    </object>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedViewBooking(null);
+                      setPreviewFile(null);
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2 rounded text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    إغلاق مساحة المعاينة
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* --- SERVICE DELETE CONFIRMATION DIALOG MODAL --- */}
+      {serviceToDeleteCheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in" dir="rtl">
+          <div className="w-full max-w-md bg-white border border-slate-300 rounded-2xl shadow-2xl overflow-hidden font-sans transform transition-all">
+            {/* Header Red Warning style */}
+            <div className="bg-red-50 border-b border-red-100 p-5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-650 animate-pulse flex-shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-black text-slate-900 text-sm">تأكيد حذف الخدمة نهائياً</h4>
+                <p className="text-[10px] text-red-700 font-bold mt-0.5">تنبيه ذو أهمية قصوى لمنع الفقدان المفاجئ للبيانات</p>
+              </div>
+            </div>
+
+            {/* Warning Content */}
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-1.5">
+                <span className="text-[10px] text-slate-400 block font-bold">المعاملة المستهدفة بالحذف:</span>
+                <span className="font-extrabold text-slate-850 text-sm block">{serviceToDeleteCheck.name}</span>
+                <span className="inline-block text-[9px] font-bold px-2 py-0.5 bg-slate-200 text-slate-700 rounded mr-0.5">
+                  📁 {getCategoryName(serviceToDeleteCheck.category)}
+                </span>
+              </div>
+
+              <p className="text-slate-600 text-xs leading-relaxed">
+                إن حذف هذه الخدمة سيؤدي بمفعول فوري ومستمر إلى إزالتها كلياً من كافة قوائم اختيار واستمارات حجز العملاء (الواجهات العامة والخاصة بالمستخدمين) بالإضافة إلى جميع المراجع والروابط الداخلية النشطة بلوحة تحكم النظام.
+              </p>
+              <p className="text-slate-750 text-xs font-bold leading-relaxed text-slate-800">
+                هل تريد الاستمرار بمتابعة الحذف الفعلي لهذه الخدمة وتأكيد الإجراء، أم تود التراجع والإلغاء؟
+              </p>
+
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg text-amber-900 text-[10px] font-semibold leading-relaxed">
+                ⚠️ <strong className="text-amber-950 font-black">ملاحظة محاسبية:</strong> الحذف لا يؤثر على التقارير المالية والقيود المحاسبية التاريخية المسجلة مسبقاً في الدفتر المالي؛ بل يمنع الحجوزات المستقبلية فقط.
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="bg-slate-50 p-4 border-t border-slate-100 flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setServiceToDeleteCheck(null)}
+                className="px-4 py-2 bg-white hover:bg-slate-105 text-slate-700 font-bold rounded-xl border border-slate-300 transition text-xs"
+              >
+                تراجع وإلغاء
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteService}
+                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-black rounded-xl shadow-md transition text-xs"
+              >
+                تأكيد حذف الخدمة نهائياً
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CANNOT DELETE ALERT DIALOG --- */}
+      {showCannotDeleteAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4 animate-fade-in" dir="rtl">
+          <div className="w-full max-w-sm bg-white border border-slate-300 rounded-2xl shadow-2xl overflow-hidden font-sans transform transition-all">
+            {/* Header Block */}
+            <div className="bg-amber-50 border-b border-amber-100 p-5 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 flex-shrink-0">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h4 className="font-black text-slate-900 text-sm">إجراء غير مسموح بنظام سما</h4>
+                <p className="text-[10px] text-amber-800 font-bold mt-0.5">ضوابط الحد الأدنى من الدليل النشط</p>
+              </div>
+            </div>
+
+            {/* Content info */}
+            <div className="p-5 space-y-3.5">
+              <p className="text-slate-650 text-xs leading-normal">
+                عذراً، يجب أن تحتفظ منصة مكتب سما المملكة <strong className="text-slate-900 font-bold">بخدمة واحدة نشطة على الأقل</strong> في قاعدة البيانات لتجنب تعطل لوحة استمارات الحجز الذاتية وتلف واجهة المستفيدين.
+              </p>
+              <p className="text-slate-500 text-[11px] leading-normal font-sans">
+                💡 يرجى إضافة الخدمة البديلة الجديدة وتفعيلها أولاً، ثم العودة لإلغاء أو تعديل أو مسح هذه الخدمة الحالية بأمان تام.
+              </p>
+            </div>
+
+            {/* Close footer button */}
+            <div className="bg-slate-50 p-4 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowCannotDeleteAlert(false)}
+                className="w-full sm:w-auto px-6 py-2 bg-slate-900 hover:bg-slate-850 text-white font-bold rounded-xl transition text-xs text-center"
+              >
+                حسناً، فهمت ذلك
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Smart Appearance and Spiritual Background Controller */}
+      {showBgSelector && (
+        <div className="fixed bottom-4 left-4 z-40 hidden md:flex flex-col items-end gap-2 font-sans select-none animate-fade-in">
+          {isBgSelectorCollapsed ? (
+            /* Tiny elegant closed floating circle badge */
+            <div className="flex items-center gap-1 bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 hover:border-amber-400/60 rounded-xl p-1 shadow-2xl transition-all duration-300 hover:scale-105">
+              <button
+                type="button"
+                onClick={() => setIsBgSelectorCollapsed(false)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-amber-400 hover:text-amber-300 transition-all cursor-pointer font-black"
+                title="ذكاء المظهر والخلفيات الإيمانية"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <span className="text-[10px] tracking-tight">مظهر مكة الذكي</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setShowBgSelector(false)}
+                className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-500 hover:text-red-400 transition-colors cursor-pointer"
+                title="إخفاء هذا الزر بالكامل (يمكنك إعادته من لوحة المدراء)"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            /* Expanded widget card */
+            <div className="bg-slate-900/95 backdrop-blur-md text-white border border-slate-800 rounded-2xl p-3.5 shadow-2xl space-y-3 w-64 transition-all duration-305 relative">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="bg-amber-500/10 p-1 rounded-lg border border-amber-500/20 text-amber-500">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  </div>
+                  <div>
+                    <span className="text-[10.5px] font-black text-slate-100 block">ذكاء المظهر والخلفيات</span>
+                    <span className="text-[8.5px] text-slate-400 block mt-0.5">مزامنة توقيت العاصمة المقدسة</span>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-1">
+                  {/* Minimize button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsBgSelectorCollapsed(true)}
+                    className="p-1 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    title="تصغير الأيقونة"
+                  >
+                    <Minimize2 className="w-3 h-3" />
+                  </button>
+                  {/* Close button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowBgSelector(false)}
+                    className="p-1 hover:bg-slate-800 rounded-md text-slate-400 hover:text-red-400 transition-colors cursor-pointer"
+                    title="إخفاء تماماً من الشاشة"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Strategy selectors */}
+              <div className="space-y-1.5">
+                <span className="text-[9px] text-slate-300 block pr-0.5">اختيار السمة الروحية للمسجد الحرام:</span>
+                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setBgStrategy('ai')}
+                    className={`py-1.5 px-2 rounded-lg font-bold border flex items-center justify-center gap-1 transition-all ${
+                      bgStrategy === 'ai' 
+                        ? 'bg-amber-600 text-slate-950 border-amber-400 shadow-sm' 
+                        : 'bg-slate-950/50 hover:bg-slate-800 text-slate-200 border-slate-850'
+                    }`}
+                  >
+                    <Sparkles className="w-2.5 h-2.5" />
+                    <span>تحديد ذكي</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBgStrategy('sunrise')}
+                    className={`py-1.5 px-2 rounded-lg font-bold border flex items-center justify-center gap-1 transition-all ${
+                      bgStrategy === 'sunrise' 
+                        ? 'bg-amber-600 text-slate-950 border-amber-400 shadow-sm' 
+                        : 'bg-slate-950/50 hover:bg-slate-800 text-slate-200 border-slate-850'
+                    }`}
+                  >
+                    <Sun className="w-2.5 h-2.5" />
+                    <span>شروق مكة</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBgStrategy('sunset')}
+                    className={`py-1.5 px-2 rounded-lg font-bold border flex items-center justify-center gap-1 transition-all ${
+                      bgStrategy === 'sunset' 
+                        ? 'bg-amber-600 text-slate-950 border-amber-400 shadow-sm' 
+                        : 'bg-slate-950/50 hover:bg-slate-800 text-slate-200 border-slate-850'
+                    }`}
+                  >
+                    <Sun className="w-2.5 h-2.5" />
+                    <span>غروب مكة</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBgStrategy('night')}
+                    className={`py-1.5 px-2 rounded-lg font-bold border flex items-center justify-center gap-1 transition-all ${
+                      bgStrategy === 'night' 
+                        ? 'bg-amber-600 text-slate-950 border-amber-400 shadow-sm' 
+                        : 'bg-slate-950/50 hover:bg-slate-800 text-slate-200 border-slate-850'
+                    }`}
+                  >
+                    <Moon className="w-2.5 h-2.5" />
+                    <span>ليل مكة</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-slate-950/60 p-1.5 rounded-lg border border-slate-855 text-[8.5px] text-slate-300 leading-relaxed font-sans text-right flex justify-between">
+                <span>السمة الحالية:</span>
+                <strong className="text-amber-400 font-extrabold">{getBgNameAr(bgStrategy)}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Toast Feedback for Real-Time WhatsApp Notifications */}
+      {waToast && waToast.show && (
+        <div className="fixed bottom-6 left-6 z-50 max-w-md w-full sm:w-[440px] bg-slate-900 border border-slate-800 text-white p-4 rounded-xl shadow-2xl animate-fade-in font-sans" dir="rtl">
+          <div className="flex items-start gap-3">
+            <div className={`p-2 rounded-lg flex-shrink-0 ${
+              waToast.type === 'loading' ? 'bg-indigo-500/10 text-indigo-400' :
+              waToast.type === 'success' ? 'bg-emerald-500/10 text-emerald-400' :
+              'bg-red-500/10 text-red-400'
+            }`}>
+              {waToast.type === 'loading' && (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {waToast.type === 'success' && <CheckCircle2 className="w-5 h-5" />}
+              {waToast.type === 'error' && <AlertCircle className="w-5 h-5" />}
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-amber-400 tracking-wider uppercase block">
+                  {waToast.type === 'loading' && 'جاري بث الإشعار الفوري...'}
+                  {waToast.type === 'success' && 'البوابة الإلكترونية: تم البث بنجاح'}
+                  {waToast.type === 'error' && 'البوابة الإلكترونية: خطأ في البث'}
+                </span>
+                <button 
+                  onClick={() => setWaToast(null)}
+                  className="text-slate-500 hover:text-slate-300 text-xs font-bold font-sans cursor-pointer transition-colors"
+                >
+                  إغلاق
+                </button>
+              </div>
+              
+              <h4 className="text-[12px] font-bold text-slate-150 mt-1">{waToast.message}</h4>
+              
+              <div className="bg-slate-950 border border-slate-850 p-2.5 rounded-lg text-[10px] text-slate-400 mt-2 font-mono whitespace-pre-wrap leading-relaxed max-h-[140px] overflow-y-auto">
+                <div className="border-b border-slate-900 pb-1 mb-1 font-sans font-extrabold text-slate-500 flex justify-between select-none">
+                  <span>تفاصيل الرسالة المرسلة:</span>
+                  <span className="text-emerald-500 text-[9px]">WhatsApp Gateway</span>
+                </div>
+                {waToast.details}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

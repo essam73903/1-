@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: Remix: Remix: Remix: سما المملكة للخدمات المتكاملة",
+  "description": "بوابة خدمات مكتب سما المملكة لإدارة معاملات التأشيرات، خدمات التعقيب، والنقل البري والجوي مع الفوترة والإدارة  والعمليات الكاملة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

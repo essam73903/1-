@@ -1,0 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Tajawal", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+:root {
+  font-family: 'Tajawal', sans-serif;
+  scroll-behavior: smooth;
+}
+
+/* Custom fade-in animations for smooth tab transitions */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* 
+  =========================================
+  PRINT STYLESHEET FOR PROFESSIONAL INVOICE 
+  =========================================
+*/
+@media print {
+  /* Hide the rest of the application completely to isolate print target */
+  body, html, #root {
+    visibility: hidden;
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+  }
+  
+  /* Isolate and display only the print-area element and its children */
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+  
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    background: #ffffff !important;
+  }
+
+  /* Prevent browser-level margins and page headers/footers */
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  /* Force background colors of tables, badges, and Totals boxes to display in print copies */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
