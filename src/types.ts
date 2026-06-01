@@ -7,6 +7,9 @@ export interface Service {
   category: string;
   icon: string; // Lucide icon name or indicator
   additionalFees?: { id: string; name: string; amount: number }[];
+  baseCurrency?: 'SAR' | 'USD' | 'EUR';
+  baseGovFee?: number;
+  baseOfficeFee?: number;
 }
 
 export interface AttachedFile {

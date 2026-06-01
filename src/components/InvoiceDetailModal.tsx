@@ -12,8 +12,35 @@ interface InvoiceDetailModalProps {
 
 export default function InvoiceDetailModal({ isOpen, onClose, transaction }: InvoiceDetailModalProps) {
   const [isExporting, setIsExporting] = useState(false);
+  const [autoPrint, setAutoPrint] = useState(() => {
+    return localStorage.getItem('sm_auto_print') === 'true';
+  });
+
+  const handleToggleAutoPrint = (checked: boolean) => {
+    setAutoPrint(checked);
+    localStorage.setItem('sm_auto_print', checked ? 'true' : 'false');
+  };
+
+  React.useEffect(() => {
+    if (isOpen && transaction && autoPrint) {
+      const printTimer = setTimeout(() => {
+        window.print();
+      }, 500);
+      return () => clearTimeout(printTimer);
+    }
+  }, [isOpen, transaction?.id, autoPrint]);
 
   if (!isOpen || !transaction) return null;
+
+  const isTransferOrCashPending = !!(transaction.notes && (
+    transaction.notes.includes('معلقة') || 
+    transaction.notes.includes('معلق') || 
+    transaction.notes.includes('تدقيق') || 
+    transaction.notes.includes('بانتظار') ||
+    transaction.notes.includes('نقدي بمقر المكتب') ||
+    transaction.notes.includes('سداد نقدي') ||
+    transaction.notes.includes('مرحل تلقائياً')
+  ));
 
   const handlePrint = () => {
     window.print();
@@ -79,9 +106,21 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
       <div className="w-full max-w-2xl bg-white border-2 border-slate-900 rounded-lg shadow-2xl overflow-hidden my-8">
         {/* Modal Toolbar (Non-printable) */}
         <div className="bg-slate-950 text-white px-6 py-4 flex justify-between items-center print:hidden">
-          <div className="flex items-center gap-2">
-            <Receipt className="w-5 h-5 text-amber-500" />
-            <span className="font-bold text-base">استعراض الفاتورة الضريبية المبسطة</span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Receipt className="w-5 h-5 text-amber-500" />
+              <span className="font-bold text-base">استعراض الفاتورة الضريبية المبسطة</span>
+            </div>
+            {isTransferOrCashPending ? (
+              <span className="bg-amber-500/15 text-amber-400 border border-amber-500/30 text-[10px] px-2.5 py-1 rounded-full font-bold animate-subtle-pulse-amber flex items-center gap-1 leading-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                <span>⏳ قيد معالجة الطلب والسداد</span>
+              </span>
+            ) : (
+              <span className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[10px] px-2.5 py-1 rounded-full font-bold flex items-center gap-1 leading-none">
+                <span>✓ معاملة مكتملة ومسددة</span>
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -112,6 +151,27 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
           </div>
         </div>
 
+        {/* Smart Billing Settings Bar (Non-printable) */}
+        <div className="bg-slate-100 border-b border-slate-200 px-6 py-2.5 flex flex-wrap justify-between items-center text-[11px] select-none print:hidden gap-3">
+          <div className="flex items-center gap-2 text-slate-700">
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${autoPrint ? 'bg-amber-400' : 'bg-slate-350'}`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${autoPrint ? 'bg-amber-500' : 'bg-slate-400'}`}></span>
+            </span>
+            <span className="font-extrabold text-slate-800">خيارات الفوترة والتحكّم بالطباعة:</span>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer text-slate-700 hover:text-slate-950 transition-colors">
+            <input 
+              type="checkbox"
+              id="autoprint-toggle-checkbox"
+              checked={autoPrint}
+              onChange={(e) => handleToggleAutoPrint(e.target.checked)}
+              className="rounded border-slate-300 text-amber-500 focus:ring-amber-500 h-3.5 w-3.5 cursor-pointer accent-amber-500"
+            />
+            <span className="font-bold">تفعيل تشغيل حوار الطباعة التلقائي (Print Dialog) فوراً عند إصدار أو فتح السند المالي</span>
+          </label>
+        </div>
+
         {/* Printable Content Frame */}
         <div id="print-area" className="p-8 bg-white text-slate-900 font-sans leading-relaxed relative">
           
@@ -132,6 +192,20 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 <span>فاتورة ضريبية مبسطة صادرة ومسجلة</span>
               </div>
+              {isTransferOrCashPending ? (
+                <div className="bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 font-bold text-xs rounded-md flex items-center gap-1.5 animate-subtle-pulse-amber self-stretch md:self-end justify-center md:justify-start">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </span>
+                  <span>قيد تدقيق الحسابات ومراجعة السداد</span>
+                </div>
+              ) : (
+                <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 font-bold text-xs rounded-md flex items-center gap-1.5 self-stretch md:self-end justify-center md:justify-start">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>معاملة مسددة بالكامل ومعتمدة</span>
+                </div>
+              )}
               <p><span className="text-slate-500">رقم الفاتورة:</span> <span className="font-bold text-slate-900 text-sm">{transaction.invoiceNumber}</span></p>
               <p><span className="text-slate-500">تاريخ الإصدار:</span> <span className="font-bold">{new Date(transaction.date).toLocaleDateString('ar-SA')} - {new Date(transaction.date).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</span></p>
             </div>

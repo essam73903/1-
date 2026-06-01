@@ -103,6 +103,19 @@ export default function CheckoutPaymentModal({
     return () => clearInterval(interval);
   }, [stcOtpSent, stcTimer]);
 
+  // Autotrigger print dialog immediately on successful receipt generation if configured
+  useEffect(() => {
+    if (step === 'success') {
+      const isAutoPrintEnabled = localStorage.getItem('sm_auto_print') === 'true';
+      if (isAutoPrintEnabled) {
+         const printTimer = setTimeout(() => {
+           window.print();
+         }, 600);
+         return () => clearTimeout(printTimer);
+      }
+    }
+  }, [step]);
+
   if (!isOpen || !service) return null;
 
   // Pricing calculations

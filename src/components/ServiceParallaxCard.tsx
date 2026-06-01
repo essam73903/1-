@@ -238,12 +238,29 @@ export default function ServiceParallaxCard({ service, onSelect, onDetails, rend
         {/* Redesigned billing fee checklist - elegant bento style */}
         <div className="mt-4 bg-slate-50/75 rounded-2xl p-4 border border-slate-100 group-hover:bg-amber-50/15 group-hover:border-amber-100/30 transition-colors duration-450 space-y-2.5 relative">
           
+          {service.baseCurrency && service.baseCurrency !== 'SAR' && (
+            <div className="flex items-center gap-1.5 justify-center text-[10px] bg-amber-500/10 text-amber-800 border border-amber-500/15 px-2.5 py-1 rounded-lg font-bold font-sans">
+              <span>💱 {lang === 'en' ? 'Base rate defined in' : 'العملة الأساسية للمعاملة:'} {service.baseCurrency}</span>
+            </div>
+          )}
+
           <div className="flex justify-between items-center text-[11px] text-slate-500 font-sans">
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
               <span>{lang === 'en' ? 'Government Fees:' : 'الرسوم الحكومية:'}</span>
             </span>
-            <span className="font-bold text-slate-900 font-mono">{service.govFee.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'}</span>
+            <span className="font-bold text-slate-900 font-mono">
+              {service.baseCurrency && service.baseCurrency !== 'SAR' ? (
+                <span className="flex flex-col items-end">
+                  <span>{service.baseCurrency === 'USD' ? '$' : '€'}{service.baseGovFee?.toFixed(2)}</span>
+                  <span className="text-[10px] text-slate-400 font-sans font-normal leading-none mt-0.5">
+                    (≈ {service.govFee.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'})
+                  </span>
+                </span>
+              ) : (
+                <span>{service.govFee.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'}</span>
+              )}
+            </span>
           </div>
 
           <div className="flex justify-between items-center text-[11px] text-slate-500 font-sans">
@@ -251,7 +268,18 @@ export default function ServiceParallaxCard({ service, onSelect, onDetails, rend
               <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
               <span>{lang === 'en' ? 'Sama Office Fees:' : 'أتعاب مكتب سما المملكة:'}</span>
             </span>
-            <span className="font-bold text-slate-900 font-mono">{service.officeFee.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'}</span>
+            <span className="font-bold text-slate-900 font-mono">
+              {service.baseCurrency && service.baseCurrency !== 'SAR' ? (
+                <span className="flex flex-col items-end">
+                  <span>{service.baseCurrency === 'USD' ? '$' : '€'}{service.baseOfficeFee?.toFixed(2)}</span>
+                  <span className="text-[10px] text-slate-400 font-sans font-normal leading-none mt-0.5">
+                    (≈ {service.officeFee.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'})
+                  </span>
+                </span>
+              ) : (
+                <span>{service.officeFee.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'}</span>
+              )}
+            </span>
           </div>
 
           <div className="flex justify-between items-center text-[11px] text-slate-500 font-sans">
@@ -273,11 +301,25 @@ export default function ServiceParallaxCard({ service, onSelect, onDetails, rend
           )}
 
           {/* Dotted border ticket tear simulator */}
-          <div className="border-t border-dashed border-slate-200/80 pt-2.5 mt-2.5 flex justify-between items-center text-xs text-amber-900">
-            <span className="font-bold font-sans">{lang === 'en' ? 'Estimated Total:' : 'باقة السعر التقريبي:'}</span>
-            <span className="font-black text-amber-700 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 font-mono">
-              {srvTotal.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'}
+          <div className="border-t border-dashed border-slate-200/80 pt-2.5 mt-2.5 flex justify-between items-center text-xs text-amber-900/90">
+            <span className="font-bold font-sans flex flex-col">
+              <span>{lang === 'en' ? 'Estimated Total:' : 'باقة السعر التقريبي:'}</span>
+              {service.baseCurrency && service.baseCurrency !== 'SAR' && (
+                <span className="text-[9px] text-amber-600/70 font-sans font-bold leading-none mt-0.5">
+                  {lang === 'en' ? 'Defined in ' : 'عملة الأساس: '}{service.baseCurrency}
+                </span>
+              )}
             </span>
+            <div className="text-left flex flex-col items-end">
+              <span className="font-black text-amber-700 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20 font-mono">
+                {srvTotal.toFixed(2)} {lang === 'en' ? 'SAR' : 'ر.س'}
+              </span>
+              {service.baseCurrency && service.baseCurrency !== 'SAR' && (
+                <span className="text-[10px] text-slate-500 font-bold font-mono mt-1">
+                  ≈ {service.baseCurrency === 'USD' ? '$' : '€'}{((service.baseGovFee || 0) + (service.baseOfficeFee || 0) * 1.15).toFixed(2)} {service.baseCurrency}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 

@@ -8,7 +8,7 @@ import {
   Paperclip, Eye, Upload, Sparkles, Sun, Moon, ArrowUpDown,
   MessageSquare, Send, Clock, Smartphone, Building, Printer,
   Facebook, Instagram, Linkedin, Youtube, Twitter, X, Minimize2, Globe,
-  MapPin, Megaphone, Share2, Check, ExternalLink, Bell
+  MapPin, Megaphone, Share2, Check, ExternalLink, Bell, RefreshCw
 } from 'lucide-react';
 import * as LucideIcons from 'lucide-react';
 
@@ -240,6 +240,35 @@ export default function App() {
   const [lang, setLang] = useState<'ar' | 'en'>(() => {
     return (localStorage.getItem('sm_lang') as 'ar' | 'en') || 'ar';
   });
+
+  const [exchangeRates, setExchangeRates] = useState<{ [key: string]: number }>({
+    SAR: 1.0,
+    USD: 0.2666,
+    EUR: 0.2455,
+  });
+  const [isFetchingRates, setIsFetchingRates] = useState<boolean>(false);
+  const [lastRatesUpdate, setLastRatesUpdate] = useState<string>('2026-06-01 12:00:00');
+
+  const [newSrvBaseCurrency, setNewSrvBaseCurrency] = useState<'SAR' | 'USD' | 'EUR'>('SAR');
+  const [newSrvBaseGovFee, setNewSrvBaseGovFee] = useState<number>(0);
+  const [newSrvBaseOfficeFee, setNewSrvBaseOfficeFee] = useState<number>(0);
+
+  const [newSrvGovFee, setNewSrvGovFee] = useState<number>(0);
+  const [newSrvOfficeFee, setNewSrvOfficeFee] = useState<number>(0);
+
+  const convertToSari = (amt: number, fromCurr: 'SAR' | 'USD' | 'EUR') => {
+    if (fromCurr === 'SAR') return amt;
+    const rate = exchangeRates[fromCurr];
+    if (!rate) return amt * (fromCurr === 'USD' ? 3.75 : 4.08); // fallback
+    return amt / rate;
+  };
+
+  const convertFromSari = (amt: number, toCurr: 'SAR' | 'USD' | 'EUR') => {
+    if (toCurr === 'SAR') return amt;
+    const rate = exchangeRates[toCurr];
+    if (!rate) return amt * (toCurr === 'USD' ? 0.2666 : 0.2455); // fallback
+    return amt * rate;
+  };
 
   const toggleLanguage = () => {
     const nextLang = lang === 'ar' ? 'en' : 'ar';
@@ -555,6 +584,53 @@ export default function App() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRates = async () => {
+      setIsFetchingRates(true);
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/SAR');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.rates && isMounted) {
+            setExchangeRates({
+              SAR: 1.0,
+              USD: data.rates.USD || 0.2666,
+              EUR: data.rates.EUR || 0.2455,
+            });
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            const hh = String(now.getHours()).padStart(2, '0');
+            const min = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            setLastRatesUpdate(`${yyyy}-${mm}-${dd} ${hh}:${min}:${ss}`);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching live rates", err);
+      } finally {
+        if (isMounted) setIsFetchingRates(false);
+      }
+    };
+    
+    fetchRates();
+    const rateInterval = setInterval(fetchRates, 300000); // 5 mins
+    return () => {
+      isMounted = false;
+      clearInterval(rateInterval);
+    };
+  }, []);
+
+  // Sync multi-currency inputs reactively into standard SAR fees for downstream calculations
+  useEffect(() => {
+    const convertedOffice = convertToSari(newSrvBaseOfficeFee, newSrvBaseCurrency);
+    const convertedGov = convertToSari(newSrvBaseGovFee, newSrvBaseCurrency);
+    setNewSrvOfficeFee(Number(convertedOffice.toFixed(2)));
+    setNewSrvGovFee(Number(convertedGov.toFixed(2)));
+  }, [newSrvBaseOfficeFee, newSrvBaseGovFee, newSrvBaseCurrency, exchangeRates]);
   
   // Admin Authentication State
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
@@ -578,6 +654,12 @@ export default function App() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
 
+  // Saudi Labor News from Search Grounding API
+  const [laborNews, setLaborNews] = useState<string>('');
+  const [laborNewsSources, setLaborNewsSources] = useState<{title: string; uri: string}[]>([]);
+  const [isNewsLoading, setIsNewsLoading] = useState<boolean>(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+
   // Admin Inner-Tab: 'ledger' | 'requests' | 'services' | 'stats' | 'whatsapp' | 'jobs'
   const [adminTab, setAdminTab] = useState<'stats' | 'requests' | 'ledger' | 'services' | 'whatsapp' | 'jobs'>('stats');
 
@@ -589,11 +671,10 @@ export default function App() {
   const [txNotes, setTxNotes] = useState('');
 
   // New Dynamic Service Form State (Admin)
-   const [newSrvName, setNewSrvName] = useState('');
+  const [newSrvName, setNewSrvName] = useState('');
   const [newSrvDesc, setNewSrvDesc] = useState('');
-  const [newSrvGovFee, setNewSrvGovFee] = useState<number>(0);
-  const [newSrvOfficeFee, setNewSrvOfficeFee] = useState<number>(0);
   const [newSrvCategory, setNewSrvCategory] = useState<string>('visa');
+
   const [newSrvIcon, setNewSrvIcon] = useState('PlusCircle');
   const [iconSearchNew, setIconSearchNew] = useState('');
   const [iconSearchEdit, setIconSearchEdit] = useState('');
@@ -950,6 +1031,36 @@ export default function App() {
     localStorage.setItem('sm_wa_logs', JSON.stringify(whatsappLogs));
   }, [whatsappLogs]);
 
+  const fetchLaborNews = async () => {
+    setIsNewsLoading(true);
+    setNewsError(null);
+    try {
+      const res = await fetch('/api/saudi-labor-news', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        throw new Error('فشل جلب أحدث الأخبار من الخادم');
+      }
+      const data = await res.json();
+      setLaborNews(data.newsContent);
+      setLaborNewsSources(data.sources || []);
+    } catch (err: any) {
+      console.error('Error fetching labor news:', err);
+      setNewsError(err.message || 'فشل الاتصال بخادم الأخبار والمستجدات');
+    } finally {
+      setIsNewsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'home' && !laborNews && !isNewsLoading) {
+      fetchLaborNews();
+    }
+  }, [activeTab]);
+
   // Handle standard dynamic service standard changes when selected in admin form
   const handleAdminServiceSelectChange = (srvId: string) => {
     setTxServiceId(srvId);
@@ -1266,7 +1377,10 @@ export default function App() {
       officeFee: Number(newSrvOfficeFee) || 0,
       category: newSrvCategory,
       icon: newSrvIcon,
-      additionalFees: newSrvAdditionalFees
+      additionalFees: newSrvAdditionalFees,
+      baseCurrency: newSrvBaseCurrency,
+      baseGovFee: Number(newSrvBaseGovFee) || 0,
+      baseOfficeFee: Number(newSrvBaseOfficeFee) || 0,
     };
 
     setServices([...services, newSrv]);
@@ -1276,6 +1390,9 @@ export default function App() {
     setNewSrvDesc('');
     setNewSrvGovFee(0);
     setNewSrvOfficeFee(0);
+    setNewSrvBaseCurrency('SAR');
+    setNewSrvBaseGovFee(0);
+    setNewSrvBaseOfficeFee(0);
     setIconSearchNew('');
     setNewSrvAdditionalFees([]);
     setTempFeeNameNew('');
@@ -2135,6 +2252,95 @@ export default function App() {
               )}
             </section>
 
+            {/* SAUDI LABOR MINISTRY NEWS SECTION WITH GOOGLE SEARCH GROUNDING */}
+            <section className="bg-slate-900 text-white rounded-2xl p-6 md:p-8 border border-slate-850 shadow-xl space-y-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="space-y-1 text-right">
+                  <div className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-[10px] font-black border border-blue-500/20 uppercase tracking-wider">
+                    <Sparkles className="w-3.5 h-3.5 animate-pulse text-blue-400" />
+                    <span>تأصيل بحث جوجل المباشر (Google Search Grounding Live)</span>
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-black text-slate-100 font-sans">
+                    مستجدات الأنظمة وقرارات وزارة الموارد البشرية والعمل السعودية
+                  </h2>
+                  <p className="text-slate-400 text-xs leading-relaxed max-w-3xl">
+                    بوابة أخبار ذكية مدمجة بالذكاء الاصطناعي الفوري ومؤسسة على نتائج البحث الحي لعام 2026 لمتابعة لوائح التأشيرات والعمل والعمالة المنزلية والمهنية عبر المنصات الرسمية (قوى، مساند، وزارة الموارد البشرية).
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchLaborNews}
+                  disabled={isNewsLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all self-stretch md:self-auto justify-center disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isNewsLoading ? 'animate-spin' : ''}`} />
+                  <span>{isNewsLoading ? 'يجري جلب وتأصيل المستجدات...' : 'تحديث الأخبار فورياً'}</span>
+                </button>
+              </div>
+
+              {newsError ? (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center space-y-2 text-right">
+                  <p className="text-xs text-red-400 font-sans font-bold">⚠️ {newsError}</p>
+                  <button
+                    type="button"
+                    onClick={fetchLaborNews}
+                    className="text-[10px] underline text-red-300 font-bold hover:text-red-200"
+                  >
+                    محاولة الاتصال مرة أخرى
+                  </button>
+                </div>
+              ) : isNewsLoading ? (
+                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-8 flex flex-col items-center justify-center space-y-4 text-center">
+                  <div className="relative flex h-8 w-8">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-8 w-8 bg-blue-500 items-center justify-center">
+                      <RefreshCw className="w-4 h-4 text-white animate-spin" />
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-center">
+                    <p className="text-xs font-black text-slate-200">يجري فحص وتجميع أحدث القرارات الرسمية الصادرة من وزارة الموارد البشرية السعودية من الويب...</p>
+                    <p className="text-[10px] text-slate-505">يتضمن البحث المباشر في لوائح التأشيرات، رخص العمل، قرارات الاستقدام الحالية (Musaned & Qiwa)</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  <div className="bg-slate-950/65 border border-slate-850 rounded-xl p-6 shadow-inner text-right relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-1.5 h-full bg-blue-500"></div>
+                    <div className="prose prose-invert prose-xs max-w-none text-slate-200 leading-relaxed font-sans whitespace-pre-wrap text-xs md:text-sm">
+                      {laborNews || "انقر فوق زر تحديث الأخبار لعرض مستجدات العمل والعمالة بالتأصيل الحي."}
+                    </div>
+                  </div>
+
+                  {laborNewsSources && laborNewsSources.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-extrabold text-slate-300 flex items-center justify-start gap-1 text-right">
+                        <span>🔗</span>
+                        <span>مصادر ومراجع التحقق والتأصيل الرقمي (Grounding Sources):</span>
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                        {laborNewsSources.map((src, idx) => (
+                          <a
+                            key={idx}
+                            href={src.uri}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-3 bg-slate-950/40 border border-slate-850 hover:border-blue-500/40 rounded-lg text-[10px] md:text-xs text-blue-400 hover:text-blue-300 transition-all font-bold group"
+                          >
+                            <span className="truncate max-w-[85%] text-right">{src.title}</span>
+                            <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
             {/* REALTIME SYSTEM SUBMIT FORM */}
             <section id="booking-anchor" className="bg-slate-100 py-10 rounded-2xl border border-slate-200 shadow-inner px-4 block">
               <div className="max-w-xl mx-auto bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
@@ -2426,11 +2632,11 @@ export default function App() {
                                   </span>
                                 )}
                               </div>
-                              <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                              <span className={`px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
                                 b.status === 'completed' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' :
-                                b.status === 'processing' ? 'bg-blue-50 text-blue-800 border border-blue-200' :
+                                b.status === 'processing' ? 'bg-blue-50 text-blue-800 border border-blue-200 animate-subtle-pulse-blue font-extrabold' :
                                 b.status === 'cancelled' ? 'bg-red-50 text-red-800 border border-red-200' :
-                                'bg-amber-50 text-amber-800 border border-amber-200'
+                                'bg-amber-50 text-amber-800 border border-amber-200 animate-subtle-pulse-amber font-extrabold'
                               }`}>
                                 {b.status === 'pending' && (lang === 'en' ? 'Pending Administrative Review' : 'قيد الانتظار لمراجعة الإدارة')}
                                 {b.status === 'processing' && (lang === 'en' ? 'Processing & Executing' : 'تحت المعالجة الإجرائية الآن')}
@@ -3592,11 +3798,11 @@ export default function App() {
                     </h3>
 
                     <div className="space-y-3 font-sans text-xs">
-                      <div className="flex justify-between items-center p-2.5 bg-yellow-50 text-yellow-800 rounded border border-yellow-100">
+                      <div className="flex justify-between items-center p-2.5 bg-yellow-50 text-yellow-800 rounded border border-yellow-100 animate-subtle-pulse-amber">
                         <span className="font-bold">قيد الانتظار لمراجعة الإدارة:</span>
                         <strong className="text-sm font-mono">{bookings.filter(b => b.status === 'pending').length}</strong>
                       </div>
-                      <div className="flex justify-between items-center p-2.5 bg-blue-50 text-blue-800 rounded border border-blue-100">
+                      <div className="flex justify-between items-center p-2.5 bg-blue-50 text-blue-800 rounded border border-blue-100 animate-subtle-pulse-blue">
                         <span className="font-bold">تحت المعالجة الإجرائية والتعقيب:</span>
                         <strong className="text-sm font-mono">{bookings.filter(b => b.status === 'processing').length}</strong>
                       </div>
@@ -3701,10 +3907,10 @@ export default function App() {
                               </td>
                               <td className="p-3">
                                 <div className="flex items-center justify-center gap-1.5 text-[10px]">
-                                  <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-mono font-bold" title="قيد الانتظار لمراجعة الإدارة">
+                                  <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-mono font-bold animate-subtle-pulse-amber" title="قيد الانتظار لمراجعة الإدارة">
                                     {pendingCount} قيد الانتظار
                                   </span>
-                                  <span className="bg-blue-105 text-blue-800 px-2 py-0.5 rounded-md font-mono font-bold" title="تحت المعالجة الإجرائية والتعقيب">
+                                  <span className="bg-blue-105 text-blue-800 px-2 py-0.5 rounded-md font-mono font-bold animate-subtle-pulse-blue" title="تحت المعالجة الإجرائية والتعقيب">
                                     {processingCount} تحت التنفيذ
                                   </span>
                                   <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-mono font-bold animate-pulse" title="مكتملة ومصدقة بنجاح">
@@ -4801,20 +5007,93 @@ export default function App() {
                           <span className="text-sm font-black">الضوابط المالية وجداول التسعير الفني</span>
                         </div>
 
+                        {/* Live Feed Rates Ticker Banner */}
+                        <div className="bg-slate-100 border border-slate-300/60 rounded-xl p-3.5 space-y-2.5 font-sans">
+                          <div className="flex items-center justify-between text-slate-700 text-xs flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="relative flex h-2 w-2">
+                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isFetchingRates ? 'bg-amber-400' : 'bg-emerald-400'}`}></span>
+                                <span className={`relative inline-flex rounded-full h-2 w-2 ${isFetchingRates ? 'bg-amber-500' : 'bg-emerald-500'}`}></span>
+                              </span>
+                              <span className="font-extrabold">تغذية أسعار أسواق المال المباشرة (التحصين المصرفي):</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">تحديث تلقائي: {lastRatesUpdate}</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 bg-white/60 p-2 rounded-lg border border-slate-200 text-[11px] font-mono justify-center text-slate-800">
+                            <span>🇸🇦 1.00 SAR</span>
+                            <span className="text-slate-300">|</span>
+                            <span>🇺🇸 1 USD = {(1 / exchangeRates.USD).toFixed(3)} SAR</span>
+                            <span className="text-slate-300">|</span>
+                            <span>🇪🇺 1 EUR = {(1 / exchangeRates.EUR).toFixed(3)} SAR</span>
+                          </div>
+                        </div>
+
+                        {/* Currency Selector */}
+                        <div className="bg-amber-50/20 border border-amber-200/50 rounded-xl p-3.5 space-y-2">
+                          <label className="block text-slate-800 font-extrabold text-xs text-right">عملة التسعير المرجعية للباقة:</label>
+                          <div className="flex flex-wrap gap-2">
+                            {(['SAR', 'USD', 'EUR'] as const).map((curr) => {
+                              const labelMap = { SAR: '🇸🇦 ريال سعودي (SAR)', USD: '🇺🇸 دولار أمريكي (USD)', EUR: '🇪🇺 يورو أوروبي (EUR)' };
+                              const isSelected = newSrvBaseCurrency === curr;
+                              return (
+                                <button
+                                  key={curr}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewSrvBaseCurrency(curr);
+                                    // if changing to SAR, reset base fees to current standard fees to avoid confusion
+                                    if (curr === 'SAR') {
+                                      setNewSrvBaseOfficeFee(newSrvOfficeFee);
+                                      setNewSrvBaseGovFee(newSrvGovFee);
+                                    }
+                                  }}
+                                  className={`flex-1 min-w-[120px] py-2 px-3 text-xs font-extrabold rounded-lg border transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-amber-500 border-amber-500 text-slate-950 shadow-xs'
+                                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  {labelMap[curr]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[10px] text-slate-500 leading-normal">
+                            المكتب يعتمد تسعير الخدمات بعملات عالمية على أن تتم تصفيتها محاسبياً بالريال السعودي تلقائياً حسب جدول الصرف الموضح أعلاه.
+                          </p>
+                        </div>
+
+                        {/* Fee Inputs with Multi-Currency Context */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-3xs space-y-1.5 text-right">
                             <label className="block text-slate-800 font-bold text-xs flex items-center gap-1 justify-start">
                               <Coins className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>* أتعاب وتكاليف تعقيب المكتب (ر.س):</span>
+                              <span>* أتعاب وتكاليف تعقيب المكتب ({newSrvBaseCurrency === 'SAR' ? 'ر.س' : newSrvBaseCurrency}):</span>
                             </label>
                             <input
                               type="number"
                               required
-                              value={newSrvOfficeFee}
-                              onChange={(e) => setNewSrvOfficeFee(Number(e.target.value) || 0)}
+                              value={newSrvBaseCurrency === 'SAR' ? newSrvOfficeFee : newSrvBaseOfficeFee}
+                              onChange={(e) => {
+                                const val = Number(e.target.value) || 0;
+                                if (newSrvBaseCurrency === 'SAR') {
+                                  setNewSrvOfficeFee(val);
+                                  setNewSrvBaseOfficeFee(val);
+                                } else {
+                                  setNewSrvBaseOfficeFee(val);
+                                }
+                              }}
                               placeholder="0.00"
                               className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm font-mono text-slate-900"
                             />
+                            
+                            {newSrvBaseCurrency !== 'SAR' && (
+                              <div className="flex justify-between items-center text-[10px] text-amber-900 bg-amber-500/10 p-1.5 rounded font-sans leading-none border border-amber-500/15">
+                                <span>الريال السعودي بمعدل الصرف:</span>
+                                <strong className="font-mono text-amber-950">{newSrvOfficeFee.toFixed(2)} ر.س</strong>
+                              </div>
+                            )}
+
                             <div className="flex justify-between items-center text-[10px] text-slate-500 bg-slate-50 p-1.5 rounded font-sans leading-none">
                               <span>ضريبة مضافة مقيدة (15%):</span>
                               <strong className="font-mono text-emerald-800">{(newSrvOfficeFee * 0.15).toFixed(2)} ر.س</strong>
@@ -4824,16 +5103,32 @@ export default function App() {
                           <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-3xs space-y-1.5 text-right">
                             <label className="block text-slate-800 font-bold text-xs flex items-center gap-1 justify-start">
                               <Receipt className="w-3.5 h-3.5 text-blue-600" />
-                              <span>* الرسوم الحكومية المستحقة للدولة (ر.س):</span>
+                              <span>* الرسوم الحكومية المستحقة للدولة ({newSrvBaseCurrency === 'SAR' ? 'ر.س' : newSrvBaseCurrency}):</span>
                             </label>
                             <input
                               type="number"
                               required
-                              value={newSrvGovFee}
-                              onChange={(e) => setNewSrvGovFee(Number(e.target.value) || 0)}
+                              value={newSrvBaseCurrency === 'SAR' ? newSrvGovFee : newSrvBaseGovFee}
+                              onChange={(e) => {
+                                const val = Number(e.target.value) || 0;
+                                if (newSrvBaseCurrency === 'SAR') {
+                                  setNewSrvGovFee(val);
+                                  setNewSrvBaseGovFee(val);
+                                } else {
+                                  setNewSrvBaseGovFee(val);
+                                }
+                              }}
                               placeholder="0.00"
                               className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm font-mono text-slate-900"
                             />
+
+                            {newSrvBaseCurrency !== 'SAR' && (
+                              <div className="flex justify-between items-center text-[10px] text-amber-900 bg-amber-500/10 p-1.5 rounded font-sans leading-none border border-amber-500/15">
+                                <span>الريال السعودي بمعدل الصرف:</span>
+                                <strong className="font-mono text-amber-950">{newSrvGovFee.toFixed(2)} ر.س</strong>
+                              </div>
+                            )}
+
                             <div className="flex justify-between items-center text-[10px] text-slate-500 bg-slate-50 p-1.5 rounded font-sans leading-none">
                               <span>الحالة الضريبية في سما:</span>
                               <strong className="text-blue-850 font-black">معفى من الضريبة</strong>
@@ -5425,26 +5720,105 @@ export default function App() {
                                     />
                                   </div>
 
+                                  {/* Multi-Currency Selection in edit form */}
+                                  <div className="bg-slate-100/80 p-3 rounded-xl border border-slate-200/60 space-y-2">
+                                    <div className="flex justify-between items-center text-[11px] text-slate-700 font-bold">
+                                      <span>عملة التسعير (التحويل المباشر لـ SAR):</span>
+                                      <span className="font-mono text-[10px] text-amber-800">🇺🇸$={(1 / exchangeRates.USD).toFixed(3)} | 🇪🇺€={(1 / exchangeRates.EUR).toFixed(3)}</span>
+                                    </div>
+                                    <div className="flex gap-1.5">
+                                      {(['SAR', 'USD', 'EUR'] as const).map(curr => {
+                                        const labelMap = { SAR: '🇸🇦 SAR', USD: '🇺🇸 USD', EUR: '🇪🇺 EUR' };
+                                        const isSelected = (editingService.baseCurrency || 'SAR') === curr;
+                                        return (
+                                          <button
+                                            key={curr}
+                                            type="button"
+                                            onClick={() => {
+                                              const currentBaseCurrency = editingService.baseCurrency || 'SAR';
+                                              const currentBaseOffice = currentBaseCurrency === 'SAR' ? editingService.officeFee : (editingService.baseOfficeFee || 0);
+                                              const currentBaseGov = currentBaseCurrency === 'SAR' ? editingService.govFee : (editingService.baseGovFee || 0);
+
+                                              const nextBaseOffice = curr === 'SAR' ? 0 : currentBaseOffice;
+                                              const nextBaseGov = curr === 'SAR' ? 0 : currentBaseGov;
+
+                                              const convertedOffice = convertToSari(currentBaseOffice, curr);
+                                              const convertedGov = convertToSari(currentBaseGov, curr);
+
+                                              setEditingService({
+                                                ...editingService,
+                                                baseCurrency: curr,
+                                                baseOfficeFee: nextBaseOffice,
+                                                baseGovFee: nextBaseGov,
+                                                officeFee: Number(convertedOffice.toFixed(2)),
+                                                govFee: Number(convertedGov.toFixed(2))
+                                              });
+                                            }}
+                                            className={`flex-1 py-1.5 text-[11px] font-extrabold rounded border transition-all cursor-pointer ${
+                                              isSelected
+                                                ? 'bg-amber-500 border-amber-500 text-slate-950 shadow-2xs'
+                                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                            }`}
+                                          >
+                                            {labelMap[curr]}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
                                   <div className="grid grid-cols-2 gap-3">
                                     <div>
-                                      <label className="block text-slate-700 font-bold mb-1">الرسوم الحكومية (ر.س):</label>
+                                      <label className="block text-slate-700 font-bold mb-1">
+                                        الرسوم الحكومية ({(editingService.baseCurrency || 'SAR') === 'SAR' ? 'ر.س' : editingService.baseCurrency}):
+                                      </label>
                                       <input
                                         type="number"
                                         required
-                                        value={editingService.govFee}
-                                        onChange={(e) => setEditingService({ ...editingService, govFee: Number(e.target.value) || 0 })}
+                                        value={(editingService.baseCurrency || 'SAR') === 'SAR' ? editingService.govFee : (editingService.baseGovFee || 0)}
+                                        onChange={(e) => {
+                                          const val = Number(e.target.value) || 0;
+                                          const curr = editingService.baseCurrency || 'SAR';
+                                          const converted = convertToSari(val, curr as any);
+                                          setEditingService({
+                                            ...editingService,
+                                            baseGovFee: curr === 'SAR' ? 0 : val,
+                                            govFee: Number(converted.toFixed(2))
+                                          });
+                                        }}
                                         className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 font-mono bg-white text-slate-900"
                                       />
+                                      {(editingService.baseCurrency && editingService.baseCurrency !== 'SAR') ? (
+                                        <div className="text-[9px] text-amber-800 bg-amber-500/10 p-1 mt-1 rounded font-mono text-center">
+                                          ≈ {editingService.govFee.toFixed(2)} ر.س
+                                        </div>
+                                      ) : null}
                                     </div>
                                     <div>
-                                      <label className="block text-slate-700 font-bold mb-1">أتعاب المكتب (ر.س):</label>
+                                      <label className="block text-slate-700 font-bold mb-1">
+                                        أتعاب المكتب ({(editingService.baseCurrency || 'SAR') === 'SAR' ? 'ر.س' : editingService.baseCurrency}):
+                                      </label>
                                       <input
                                         type="number"
                                         required
-                                        value={editingService.officeFee}
-                                        onChange={(e) => setEditingService({ ...editingService, officeFee: Number(e.target.value) || 0 })}
+                                        value={(editingService.baseCurrency || 'SAR') === 'SAR' ? editingService.officeFee : (editingService.baseOfficeFee || 0)}
+                                        onChange={(e) => {
+                                          const val = Number(e.target.value) || 0;
+                                          const curr = editingService.baseCurrency || 'SAR';
+                                          const converted = convertToSari(val, curr as any);
+                                          setEditingService({
+                                            ...editingService,
+                                            baseOfficeFee: curr === 'SAR' ? 0 : val,
+                                            officeFee: Number(converted.toFixed(2))
+                                          });
+                                        }}
                                         className="w-full p-2.5 border border-slate-300 rounded-lg focus:outline-none focus:border-amber-500 font-mono bg-white text-slate-900"
                                       />
+                                      {(editingService.baseCurrency && editingService.baseCurrency !== 'SAR') ? (
+                                        <div className="text-[9px] text-amber-800 bg-amber-500/10 p-1 mt-1 rounded font-mono text-center">
+                                          ≈ {editingService.officeFee.toFixed(2)} ر.س
+                                        </div>
+                                      ) : null}
                                     </div>
                                   </div>
 
