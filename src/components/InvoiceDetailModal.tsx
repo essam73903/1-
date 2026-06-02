@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Printer, Download, Receipt, Building, Calendar, User, FileText, CheckCircle2 } from 'lucide-react';
+import { X, Printer, Download, Receipt, Building, Calendar, User, FileText, CheckCircle2, Sparkles } from 'lucide-react';
 import { Transaction } from '../types';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -15,6 +15,12 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
   const [autoPrint, setAutoPrint] = useState(() => {
     return localStorage.getItem('sm_auto_print') === 'true';
   });
+
+  const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [zoom, setZoom] = useState(85); // Default 85% is perfect for previewing A4
+  const [paperColor, setPaperColor] = useState<'white' | 'cream' | 'cool-grey'>('white');
+  const [showPageBreaks, setShowPageBreaks] = useState(true);
+  const [showWatermark, setShowWatermark] = useState<'none' | 'draft' | 'copy' | 'paid'>('none');
 
   const handleToggleAutoPrint = (checked: boolean) => {
     setAutoPrint(checked);
@@ -103,7 +109,7 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-fade-in" dir="rtl">
-      <div className="w-full max-w-2xl bg-white border-2 border-slate-900 rounded-lg shadow-2xl overflow-hidden my-8">
+      <div className={`w-full ${showPdfPreview ? 'max-w-4xl' : 'max-w-2xl'} bg-white border-2 border-slate-900 rounded-lg shadow-2xl overflow-hidden my-8 transition-all duration-300`}>
         {/* Modal Toolbar (Non-printable) */}
         <div className="bg-slate-950 text-white px-6 py-4 flex justify-between items-center print:hidden">
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -122,7 +128,19 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowPdfPreview(!showPdfPreview)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-bold transition-all border ${
+                showPdfPreview 
+                  ? 'bg-amber-500 border-amber-600 text-slate-950 shadow-md font-black'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Sparkles className={`w-4 h-4 ${showPdfPreview ? 'animate-pulse text-amber-950' : 'text-amber-500'}`} />
+              <span>{showPdfPreview ? 'العرض العادي' : 'معاينة PDF (A4)'}</span>
+            </button>
             <button
               onClick={handleDownloadPDF}
               disabled={isExporting}
@@ -172,8 +190,140 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
           </label>
         </div>
 
-        {/* Printable Content Frame */}
-        <div id="print-area" className="p-8 bg-white text-slate-900 font-sans leading-relaxed relative">
+        {/* PDF Preview Toolkit Bar (Non-printable) */}
+        {showPdfPreview && (
+          <div className="bg-slate-905 text-slate-200 border-b border-slate-800 px-6 py-2.5 flex flex-wrap justify-between items-center text-xs select-none print:hidden gap-4 transition-all animate-fade-in bg-slate-900">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="font-extrabold text-slate-100 text-[11px]">مـعـايـنـة ورق A4 PDF المـطـابـق:</span>
+            </div>
+
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Paper color option */}
+              <div className="flex items-center gap-1.5 bg-slate-950 px-2 py-1 rounded border border-slate-800">
+                <span className="text-slate-400 text-[10px]">خلفية الورق:</span>
+                <button 
+                  type="button" 
+                  onClick={() => setPaperColor('white')} 
+                  className={`w-3.5 h-3.5 rounded-full bg-white border cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all ${paperColor === 'white' ? 'ring-2 ring-emerald-500' : ''}`}
+                  title="أبيض قياسي"
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setPaperColor('cream')} 
+                  className={`w-3.5 h-3.5 rounded-full bg-[#faf8f0] border cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all ${paperColor === 'cream' ? 'ring-2 ring-emerald-500' : ''}`}
+                  title="عاجي مريح للعين"
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setPaperColor('cool-grey')} 
+                  className={`w-3.5 h-3.5 rounded-full bg-[#f4f5f7] border cursor-pointer hover:ring-2 hover:ring-emerald-500 transition-all ${paperColor === 'cool-grey' ? 'ring-2 ring-emerald-500' : ''}`}
+                  title="رمادي مالي"
+                />
+              </div>
+
+              {/* Watermark toggle */}
+              <div className="flex items-center gap-1 bg-slate-950 px-2 py-1 rounded border border-slate-800 text-[10px]">
+                <span className="text-slate-450 text-[10px] text-slate-400">علامة مائية:</span>
+                <select 
+                  value={showWatermark} 
+                  onChange={(e: any) => setShowWatermark(e.target.value)}
+                  className="bg-slate-900 text-slate-200 border-none font-bold cursor-pointer text-[10px] focus:outline-none py-0.5"
+                >
+                  <option value="none">بدون</option>
+                  <option value="draft">مسودة (DRAFT)</option>
+                  <option value="copy">نسخة (COPY)</option>
+                  <option value="paid">مسددة (PAID)</option>
+                </select>
+              </div>
+
+              {/* Page indicator guide lines */}
+              <label className="flex items-center gap-1.5 cursor-pointer text-slate-350 hover:text-white transition-colors text-[11px]">
+                <input 
+                  type="checkbox"
+                  checked={showPageBreaks}
+                  onChange={(e) => setShowPageBreaks(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500 h-3.5 w-3.5 cursor-pointer accent-emerald-500"
+                />
+                <span className="font-bold">مؤشر فاصل الصفحات</span>
+              </label>
+
+              {/* Zoom controls */}
+              <div className="flex items-center gap-1.5 bg-slate-950 px-2.5 py-1 rounded border border-slate-800">
+                <span className="text-slate-400 text-[10px]">حجم السند:</span>
+                <button 
+                  type="button"
+                  disabled={zoom <= 60}
+                  onClick={() => setZoom(prev => Math.max(60, prev - 10))}
+                  className="w-4 h-4 flex items-center justify-center bg-slate-900 hover:bg-slate-800 disabled:opacity-30 rounded text-slate-200 font-bold cursor-pointer text-xs"
+                >
+                  -
+                </button>
+                <span className="font-mono font-bold text-slate-100 min-w-[28px] text-center text-[10px]">{zoom}%</span>
+                <button 
+                  type="button"
+                  disabled={zoom >= 130}
+                  onClick={() => setZoom(prev => Math.min(130, prev + 10))}
+                  className="w-4 h-4 flex items-center justify-center bg-slate-900 hover:bg-slate-800 disabled:opacity-30 rounded text-slate-200 font-bold cursor-pointer text-xs"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Printable Content Frame & Layout Wrapper */}
+        <div className={showPdfPreview ? 'bg-slate-800 border-b border-slate-300 flex justify-center py-8 px-4 overflow-y-auto overflow-x-hidden max-h-[580px] print:p-0 print:bg-white' : 'bg-white'}>
+          <div
+            style={showPdfPreview ? {
+              width: '210mm',
+              transform: `scale(${zoom / 100})`,
+              transformOrigin: 'top center',
+              marginBottom: `calc(297mm * (1 - ${zoom / 100}) * -1)`,
+            } : undefined}
+            className={showPdfPreview ? 'origin-top shadow-[0_20px_60px_-15px_rgba(0,0,0,0.6)] border border-slate-950 relative transition-transform duration-200 print:shadow-none print:border-none' : 'w-full'}
+          >
+            <div 
+              id="print-area" 
+              className={`p-8 text-slate-900 font-sans leading-relaxed relative transition-colors duration-200 ${
+                showPdfPreview 
+                  ? `min-h-[297mm] ${
+                      paperColor === 'cream' ? 'bg-[#faf8f0]' : paperColor === 'cool-grey' ? 'bg-[#f4f5f7]' : 'bg-white'
+                    }` 
+                  : 'bg-white'
+              }`}
+            >
+              {/* Dynamic visual page break line indicators */}
+              {showPdfPreview && showPageBreaks && (
+                <div className="absolute left-0 right-0 border-t-2 border-dashed border-red-500/40 pointer-events-none z-40 flex items-center justify-center font-mono text-[9px] text-red-500 bg-red-400/5 select-none" style={{ top: '293mm' }}>
+                  <span className="bg-red-950 text-white px-2 py-0.5 rounded-b-md shadow font-black tracking-wider leading-none">حدود صفحة الطباعة الأولى A4</span>
+                </div>
+              )}
+
+              {/* Watermark overlay captured in PDF and print */}
+              {showWatermark !== 'none' && (
+                <div className="absolute inset-x-0 top-1/4 bottom-1/4 pointer-events-none select-none z-0 flex items-center justify-center overflow-hidden">
+                  <div className="text-slate-900/10 dark:text-slate-900/5 font-black text-6xl md:text-8xl tracking-widest uppercase rotate-[-35deg] border-8 border-slate-900/10 dark:border-slate-900/5 p-4 rounded-xl text-center">
+                    {showWatermark === 'draft' ? (
+                      <>
+                        <div className="text-4xl md:text-5xl">مسودة</div>
+                        <div className="text-lg md:text-xl mt-2 tracking-normal">DRAFT DOCUMENT</div>
+                      </>
+                    ) : showWatermark === 'copy' ? (
+                      <>
+                        <div className="text-4xl md:text-5xl">نسخة</div>
+                        <div className="text-lg md:text-xl mt-2 tracking-normal font-sans">OFFICIAL COPY</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-emerald-900/15 text-4xl md:text-5xl">مسددة</div>
+                        <div className="text-emerald-950/15 text-lg md:text-xl mt-2 tracking-normal font-sans">PAID IN FULL</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
           
           {/* Internal Header Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-6 border-b-2 border-slate-900 items-start">
@@ -319,6 +469,8 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction }: Inv
             تعتبر هذه الفاتورة مستند رسمي لإثبات إنهاء وتعميد المعاملات عبر مكتب سما المملكة. نشكركم لثقتكم الغالية بنا.
           </div>
         </div>
+      </div>
+    </div>
 
         {/* Foot toolbar for cancellation */}
         <div className="bg-slate-50 px-6 py-3 flex justify-end gap-2 border-t border-slate-200 print:hidden">

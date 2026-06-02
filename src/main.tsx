@@ -13,3 +13,17 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// Register service worker for offline capabilities
+if ('serviceWorker' in navigator && (import.meta as any).env?.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((registration) => {
+        console.log('Sama Al-Mamlakah Service Worker registered successfully:', registration.scope);
+      })
+      .catch((error) => {
+        console.error('Sama Al-Mamlakah Service Worker registration failed:', error);
+      });
+  });
+}
+
