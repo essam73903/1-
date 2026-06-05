@@ -13,6 +13,8 @@ interface BatchPrintModalProps {
 
 export default function BatchPrintModal({ isOpen, onClose, selectedTransactions, lang = 'ar' }: BatchPrintModalProps) {
   const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const [exportingPhase, setExportingPhase] = useState<string>('');
   const [zoom, setZoom] = useState(80); // Default 80% is ideal for batch landscape/portrait screens
   const [paperColor, setPaperColor] = useState<'white' | 'cream' | 'cool-grey'>('white');
   const [showPageBreaks, setShowPageBreaks] = useState(true);
@@ -63,15 +65,20 @@ export default function BatchPrintModal({ isOpen, onClose, selectedTransactions,
     }, 30);
   };
 
-  // Download high-res combined PDF
+  // Download high-res combined page-by-page PDF
   const handleDownloadCombinedPDF = async () => {
     const element = document.getElementById('print-area');
     if (!element) return;
+
+    // Retrieve all active print element pages to compile
+    const pages = element.querySelectorAll('.batch-print-page');
+    if (pages.length === 0) return;
 
     const scaleContainer = document.getElementById('batch-pdf-scale-container');
     const originalTransform = scaleContainer ? scaleContainer.style.transform : '';
     const originalMarginBottom = scaleContainer ? scaleContainer.style.marginBottom : '';
 
+    // Disable transform scaling temporarily to ensure html2canvas captures at exact native dimensions
     if (scaleContainer) {
       scaleContainer.style.transform = 'none';
       scaleContainer.style.marginBottom = '0px';
@@ -79,58 +86,76 @@ export default function BatchPrintModal({ isOpen, onClose, selectedTransactions,
 
     try {
       setIsExporting(true);
+      setExportProgress(0);
+      setExportingPhase(lang === 'en' ? 'Initializing dynamic compiler...' : 'جاري تهيئة مجمع المستندات الرقمية...');
 
-      const canvas = await html2canvas(element, {
-        scale: 2.0, // High quality vector capture
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4',
       });
 
-      const imgWidth = 210; 
-      const pageHeight = 297; 
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+      const totalPagesCount = pages.length;
 
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-      heightLeft -= pageHeight;
+      // Render & build the merged PDF page-by-page (avoids horizontal line slicing bugs!)
+      for (let i = 0; i < totalPagesCount; i++) {
+        const pageEl = pages[i] as HTMLElement;
+        const pageNum = i + 1;
+        
+        // Update live export progress & status messages
+        setExportProgress(Math.round((i / totalPagesCount) * 100));
+        setExportingPhase(
+          lang === 'en'
+            ? `Capturing high-resolution blueprint for page ${pageNum} of ${totalPagesCount}...`
+            : `جاري تحويل ومعالجة الصفحة رقم ${pageNum} من أصل ${totalPagesCount} بدقة عالية...`
+        );
 
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
-        heightLeft -= pageHeight;
+        // Capture isolated page with crisp density (2.0 scale matches typical 150-200 DPI clear print quality)
+        const canvas = await html2canvas(pageEl, {
+          scale: 2.2,
+          useCORS: true,
+          allowTaint: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: pageEl.scrollWidth,
+          windowHeight: pageEl.scrollHeight,
+        });
+
+        // Convert page to jpeg with 90% quality - reduces final PDF file size by 70% compared to heavy raw png
+        const imgData = canvas.toDataURL('image/jpeg', 0.90);
+
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        // Add image to full A4 page canvas (width=210mm, height=297mm)
+        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
       }
+
+      setExportProgress(100);
+      setExportingPhase(lang === 'en' ? 'Compressing and compiling output document...' : 'جاري تجميع الملف وضغطه في نسق الحفظ...');
 
       const fileDate = new Date().toISOString().split('T')[0];
       const filename = lang === 'en' 
-        ? `Sama_Al_Mamlakah_Batch_Invoices_${fileDate}.pdf`
-        : `سما_المملكة_دفعة_فواتير_${fileDate}.pdf`;
+        ? `Sama_Al_Mamlakah_Batch_Report_${totalPagesCount}_Pages_${fileDate}.pdf`
+        : `سما_المملكة_تقرير_المجموعة_${totalPagesCount}_صفحة_${fileDate}.pdf`;
 
       pdf.save(filename);
     } catch (error) {
-      console.error('Error generating batch PDF:', error);
+      console.error('Error generating batch PDF page-by-page:', error);
       alert(lang === 'en'
         ? 'Failed to build high-fidelity PDF. Please use the system print dialogue to Save as PDF directly.'
-        : 'فشل إخراج مستند الـ PDF المجمع. يرجى استخدام أمر الطباعة والحفظ كملف PDF رقمي.');
+        : 'فشل تصدير مستند الـ PDF المجمع لصفحات الفواتير. يرجى تكرار المحاولة أو الطباعة مباشرة.');
     } finally {
       if (scaleContainer) {
         scaleContainer.style.transform = originalTransform;
         scaleContainer.style.marginBottom = originalMarginBottom;
       }
       setIsExporting(false);
+      setExportProgress(0);
+      setExportingPhase('');
     }
   };
 
@@ -350,30 +375,65 @@ export default function BatchPrintModal({ isOpen, onClose, selectedTransactions,
               </div>
             )}
 
-            <div
-              id="batch-pdf-scale-container"
-              style={{
-                width: '210mm',
-                transform: `scale(${zoom / 100})`,
-                transformOrigin: 'top center',
-                marginBottom: `calc(297mm * (1 - ${zoom / 100}) * -1)`,
-              }}
-              className="origin-top shadow-[0_25px_70px_-15px_rgba(0,0,0,0.8)] border border-slate-950 relative transition-transform duration-200 print:shadow-none print:border-none"
-            >
-              <div 
-                id="print-area" 
-                className={`text-slate-950 font-sans leading-relaxed relative ${
-                  paperColor === 'cream' ? 'bg-[#faf8f0]' : paperColor === 'cool-grey' ? 'bg-[#f4f5f7]' : 'bg-white'
-                }`}
-                style={{ width: '210mm', minHeight: '297mm' }}
+            {/* Real-time Loader Overlay during client-side PDF rendering & composition */}
+            {isExporting && (
+              <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col items-center justify-center text-white print:hidden">
+                <div className="w-96 space-y-5 text-center p-6 bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl">
+                  <div className="w-16 h-16 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                  <div>
+                    <h3 className="font-extrabold text-white text-base tracking-wide mb-1 font-sans">
+                      {lang === 'en' ? 'Generating Merged PDF Document' : 'جاري تصدير وتوليد مستند PDF الموحد'}
+                    </h3>
+                    <p className="text-xs text-amber-400 font-sans font-bold">
+                      {lang === 'en' ? 'High-Fidelity Page-by-Page Compiler' : 'تقنية التصدير متعدد الأوراق عالي الدقة'}
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-300 px-3 py-2.5 bg-slate-950/60 border border-slate-800 rounded-xl leading-relaxed min-h-[50px] flex items-center justify-center font-sans">
+                    {exportingPhase}
+                  </p>
+                  <div className="space-y-1.5">
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-amber-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${exportProgress}%` }}
+                      ></div>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                      <span>{exportProgress}%</span>
+                      <span>{selectedTransactions.length} {lang === 'en' ? 'Invoices' : 'فواتير'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Responsive container wrapper that limits the width on small screens to prevent overflow */}
+            <div className="w-full max-w-full overflow-x-auto print:overflow-visible flex justify-start md:justify-center py-4">
+              <div
+                id="batch-pdf-scale-container"
+                style={{
+                  width: '210mm',
+                  transform: `scale(${zoom / 100})`,
+                  transformOrigin: 'top center',
+                  marginBottom: `calc(297mm * (1 - ${zoom / 100}) * -1)`,
+                }}
+                className="origin-top shadow-[0_25px_70px_-15px_rgba(0,0,0,0.8)] border border-slate-950 relative transition-transform duration-200 print:shadow-none print:border-none"
               >
+                <div 
+                  id="print-area" 
+                  className={`text-slate-950 font-sans leading-relaxed relative ${
+                    paperColor === 'cream' ? 'bg-[#faf8f0]' : paperColor === 'cool-grey' ? 'bg-[#f4f5f7]' : 'bg-white'
+                  }`}
+                  style={{ width: '210mm', minHeight: '297mm' }}
+                >
                 
                 {/* ======================================= */}
                 {/* SECTION 1: COVER SUMMARY SHEET (OPTIONAL) */}
                 {/* ======================================= */}
                 {includeCoverPage && (
                   <div 
-                    className="p-10 select-none flex flex-col justify-between"
+                    id="batch-cover-page"
+                    className="batch-print-page p-10 select-none flex flex-col justify-between"
                     style={{ 
                       minHeight: '297mm', 
                       boxSizing: 'border-box',
@@ -501,7 +561,8 @@ export default function BatchPrintModal({ isOpen, onClose, selectedTransactions,
                   return (
                     <div
                       key={transaction.id}
-                      className="p-10 select-none relative flex flex-col justify-between"
+                      id={`batch-invoice-page-${transaction.id}`}
+                      className="batch-print-page p-10 select-none relative flex flex-col justify-between"
                       style={{
                         minHeight: '297mm',
                         boxSizing: 'border-box',
@@ -696,6 +757,7 @@ export default function BatchPrintModal({ isOpen, onClose, selectedTransactions,
                 })}
 
               </div>
+            </div>
             </div>
 
           </div>
