@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Briefcase, Compass, Users, FileText, Truck, Plane, 
   TrendingUp, Coins, Receipt, Calendar, Search, Lock, 
-  Plus, Trash2, CheckCircle2, AlertCircle, Download, 
+  Plus, Trash2, CheckCircle2, AlertCircle, Download, Film, Image, 
   LogOut, Home, Info, ShieldCheck, Activity, ChevronLeft, 
   PlusCircle, FileSpreadsheet, ListFilter, HelpCircle, PhoneCall, FolderPlus,
   Paperclip, Eye, Upload, Sparkles, Sun, Moon, ArrowUpDown,
@@ -20,6 +20,7 @@ import {
 
 import PasscodeModal from './components/PasscodeModal';
 import InvoiceDetailModal from './components/InvoiceDetailModal';
+import BatchPrintModal from './components/BatchPrintModal';
 import ServiceParallaxCard from './components/ServiceParallaxCard';
 import CheckoutPaymentModal from './components/CheckoutPaymentModal';
 
@@ -492,6 +493,31 @@ export default function App() {
     localStorage.setItem('sm_service_categories', JSON.stringify(categories));
   }, [categories]);
 
+  // Dynamic service sub-categories
+  const [subCategories, setSubCategories] = useState<{ id: string; parentId: string; nameAr: string }[]>(() => {
+    const DEFAULT_SUBCATEGORIES = [
+      { id: 'visa-work', parentId: 'visa', nameAr: 'تأشيرات العمل والاستقدام' },
+      { id: 'visa-hajj', parentId: 'visa', nameAr: 'الحج والعمرة والزيارة الدينية' },
+      { id: 'visa-visit', parentId: 'visa', nameAr: 'الزيارات العائلية والشخصية' },
+      { id: 'gov-labor', parentId: 'gov', nameAr: 'وزارة الموارد البشرية والعمل' },
+      { id: 'gov-jawazat', parentId: 'gov', nameAr: 'الجوازات والإقامة والرحلات' },
+      { id: 'gov-municipality', parentId: 'gov', nameAr: 'خدمات البلدية والدفاع المدني' },
+      { id: 'transport-land', parentId: 'transport', nameAr: 'شحن ونقل بري ولوجستيات' },
+      { id: 'transport-air', parentId: 'transport', nameAr: 'حجز ومتابعة تذاكر وشحن جوي' }
+    ];
+    const saved = localStorage.getItem('sm_service_subcategories');
+    return saved ? JSON.parse(saved) : DEFAULT_SUBCATEGORIES;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('sm_service_subcategories', JSON.stringify(subCategories));
+  }, [subCategories]);
+
+  // Handle addition of custom sub-categories inside Admin Services tab
+  const [newSubCatId, setNewSubCatId] = useState('');
+  const [newSubCatParentId, setNewSubCatParentId] = useState('visa');
+  const [newSubCatNameAr, setNewSubCatNameAr] = useState('');
+
   // Handle addition of custom categories form inside Admin Services tab
   const [newCatId, setNewCatId] = useState('');
   const [newCatNameAr, setNewCatNameAr] = useState('');
@@ -554,6 +580,12 @@ export default function App() {
   const getCategoryName = (catId: string) => {
     const cat = categories.find(c => c.id === catId);
     return cat ? cat.nameAr : catId;
+  };
+
+  const getSubCategoryName = (subCatId?: string) => {
+    if (!subCatId) return '';
+    const sub = subCategories.find(sc => sc.id === subCatId);
+    return sub ? sub.nameAr : '';
   };
 
   // Current tab: 'home' | 'track' | 'jobs' | 'admin'
@@ -733,6 +765,11 @@ export default function App() {
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
   const [isInvoiceOpen, setIsInvoiceOpen] = useState(false);
   const [directPrintActive, setDirectPrintActive] = useState(false);
+  const [invoiceInitialPdfActive, setInvoiceInitialPdfActive] = useState(false);
+
+  // Batch selection states for multi-print ledger utility
+  const [selectedBatchTxIds, setSelectedBatchTxIds] = useState<string[]>([]);
+  const [isBatchPrintOpen, setIsBatchPrintOpen] = useState(false);
 
   // Saudi Labor News from Search Grounding API
   const [laborNews, setLaborNews] = useState<string>('');
@@ -748,12 +785,14 @@ export default function App() {
   const [txServiceId, setTxServiceId] = useState(DEFAULT_SERVICES[0]?.id || '');
   const [txGovFee, setTxGovFee] = useState<number>(DEFAULT_SERVICES[0]?.govFee || 0);
   const [txOfficeFee, setTxOfficeFee] = useState<number>(DEFAULT_SERVICES[0]?.officeFee || 0);
+  const [txPaymentCurrency, setTxPaymentCurrency] = useState<'SAR' | 'USD' | 'EUR'>('SAR');
   const [txNotes, setTxNotes] = useState('');
 
   // New Dynamic Service Form State (Admin)
   const [newSrvName, setNewSrvName] = useState('');
   const [newSrvDesc, setNewSrvDesc] = useState('');
   const [newSrvCategory, setNewSrvCategory] = useState<string>('visa');
+  const [newSrvSubCategory, setNewSrvSubCategory] = useState<string>('');
 
   const [newSrvIcon, setNewSrvIcon] = useState('PlusCircle');
   const [iconSearchNew, setIconSearchNew] = useState('');
@@ -785,6 +824,10 @@ export default function App() {
   const [servicesSortKey, setServicesSortKey] = useState<'name-asc' | 'name-desc' | 'total-asc' | 'total-desc'>('name-asc');
   const [visibleServicesCount, setVisibleServicesCount] = useState<number>(10);
 
+  // Public service exploration filters
+  const [homeFilterCategory, setHomeFilterCategory] = useState<string>('all');
+  const [homeFilterSubCategory, setHomeFilterSubCategory] = useState<string>('all');
+
   // Requests manager advanced filtering and sorting state
   const [reqFilterServiceId, setReqFilterServiceId] = useState<string>('all');
   const [reqFilterPaymentStatus, setReqFilterPaymentStatus] = useState<string>('all');
@@ -793,6 +836,7 @@ export default function App() {
   const [reqFilterEndDate, setReqFilterEndDate] = useState<string>('');
   const [reqSearchPhoneOrName, setReqSearchPhoneOrName] = useState<string>('');
   const [reqSortKey, setReqSortKey] = useState<string>('date-desc'); // 'date-desc' | 'date-asc' | 'name-asc'
+  const [ledgerSearchQuery, setLedgerSearchQuery] = useState('');
 
   // Welcome Message States
   const [welcomeMessage, setWelcomeMessage] = useState<string>(() => {
@@ -888,6 +932,18 @@ export default function App() {
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
   }, [bookings, reqFilterDate, reqFilterStartDate, reqFilterEndDate, reqFilterPaymentStatus, reqFilterServiceId, reqSearchPhoneOrName, reqSortKey]);
+
+  // Compute filtered ledger transactions
+  const filteredTransactions = useMemo(() => {
+    if (!ledgerSearchQuery.trim()) return transactions;
+    const q = ledgerSearchQuery.trim().toLowerCase();
+    return transactions.filter(t => 
+      t.invoiceNumber.toLowerCase().includes(q) ||
+      t.clientName.toLowerCase().includes(q) ||
+      t.serviceName.toLowerCase().includes(q) ||
+      (t.notes && t.notes.toLowerCase().includes(q))
+    );
+  }, [transactions, ledgerSearchQuery]);
 
   // Social Media Links States
   const [socialTwitter, setSocialTwitter] = useState<string>(() => {
@@ -1039,6 +1095,7 @@ export default function App() {
   const [jobsSubTab, setJobsSubTab] = useState<'all' | 'jobs' | 'announcements'>('all');
   const [jobsSearchQuery, setJobsSearchQuery] = useState('');
   const [selectedApplyJob, setSelectedApplyJob] = useState<Job | null>(null);
+  const [activeMediaLightbox, setActiveMediaLightbox] = useState<{ url: string; title: string, isVideo: boolean } | null>(null);
 
   // Application form fields
   const [appApplicantName, setAppApplicantName] = useState('');
@@ -1068,6 +1125,68 @@ export default function App() {
   const [adminAnnContent, setAdminAnnContent] = useState('');
   const [adminAnnCategory, setAdminAnnCategory] = useState<'alert' | 'offer' | 'news' | 'holiday'>('news');
   const [adminAnnIsPinned, setAdminAnnIsPinned] = useState(false);
+  const [adminAnnMediaType, setAdminAnnMediaType] = useState<'none' | 'image' | 'video'>('none');
+  const [adminAnnMediaUrl, setAdminAnnMediaUrl] = useState('');
+  const [adminAnnMediaFileUploading, setAdminAnnMediaFileUploading] = useState(false);
+  const [adminAnnMediaUploadProgress, setAdminAnnMediaUploadProgress] = useState<number | null>(null);
+
+  const handleAnnMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    let detectedType: 'none' | 'image' | 'video' = 'none';
+    if (file.type.startsWith('image/')) {
+      detectedType = 'image';
+    } else if (file.type.startsWith('video/')) {
+      detectedType = 'video';
+    }
+
+    if (detectedType === 'none') {
+      alert(lang === 'ar' ? 'يرجى اختيار ملف صورة أو فيديو صالح فقط.' : 'Please select a valid image or video file only.');
+      return;
+    }
+
+    const maxBytes = detectedType === 'image' ? 6 * 1024 * 1024 : 15 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      const displayMax = detectedType === 'image' ? '6MB' : '15MB';
+      alert(lang === 'ar' 
+        ? `عذراً، حجم الملف كبير للغاية. الحد الأقصى المسموح به هو ${displayMax}.` 
+        : `Sorry, this file is too large. The maximum allowed is ${displayMax}.`);
+      return;
+    }
+
+    setAdminAnnMediaType(detectedType);
+    setAdminAnnMediaFileUploading(true);
+    setAdminAnnMediaUploadProgress(10);
+
+    const reader = new FileReader();
+    reader.onprogress = (progressEvent) => {
+      if (progressEvent.lengthComputable) {
+        const percent = Math.round((progressEvent.loaded / progressEvent.total) * 90);
+        setAdminAnnMediaUploadProgress(percent);
+      }
+    };
+    reader.onload = (event) => {
+      const resultData = event.target?.result as string;
+      if (!resultData) {
+        setAdminAnnMediaFileUploading(false);
+        setAdminAnnMediaUploadProgress(null);
+        return;
+      }
+      setAdminAnnMediaUrl(resultData);
+      setAdminAnnMediaUploadProgress(100);
+      setTimeout(() => {
+        setAdminAnnMediaFileUploading(false);
+        setAdminAnnMediaUploadProgress(null);
+      }, 500);
+    };
+    reader.onerror = () => {
+      alert(lang === 'ar' ? 'حدث خطأ أثناء قراءة الملف.' : 'An error occurred while reading the file.');
+      setAdminAnnMediaFileUploading(false);
+      setAdminAnnMediaUploadProgress(null);
+    };
+    reader.readAsDataURL(file);
+  };
 
 
   const makkahImages = {
@@ -1384,7 +1503,8 @@ export default function App() {
       total: amount,
       date: new Date().toISOString(),
       invoiceNumber: invoiceCode,
-      notes: txtNotes
+      notes: txtNotes,
+      paymentCurrency: (details?.country && details?.country !== 'SA') ? 'USD' : undefined
     };
     
     setTransactions(prev => [newTx, ...prev]);
@@ -1425,7 +1545,38 @@ export default function App() {
     e.preventDefault();
     if (!searchPhone.trim()) return;
 
-    const results = bookings.filter(b => b.phoneNumber.replace(/\s+/g, '') === searchPhone.trim().replace(/\s+/g, ''));
+    // Convert Arabic Eastern numerals to Western digits, ignore spaces and convert to lowercase
+    const normalizeInput = (str: string) => {
+      const parsedBytes = str.replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d).toString());
+      return parsedBytes.replace(/\s+/g, '').toLowerCase();
+    };
+
+    const term = normalizeInput(searchPhone);
+
+    const results = bookings.filter(b => {
+      // 1. Match normalized mobile phone number
+      const normPhone = normalizeInput(b.phoneNumber);
+      if (normPhone === term) return true;
+
+      // 2. Match normalized Booking/Request temporary ID (or partial ID)
+      const normBookingId = normalizeInput(b.id);
+      if (normBookingId.includes(term)) return true;
+
+      // 3. Match normalized Invoice code from transactions lookup
+      // Find corresponding transactions matching this phone number OR name
+      const matchingTxs = transactions.filter(t => 
+        (t.clientName.trim().toLowerCase() === b.clientName.trim().toLowerCase() && 
+         t.serviceName.trim().toLowerCase() === b.serviceName.trim().toLowerCase())
+      );
+      
+      const hasMatchingInvoice = matchingTxs.some(t => {
+        const normInvoice = normalizeInput(t.invoiceNumber);
+        return normInvoice.includes(term);
+      });
+
+      return hasMatchingInvoice;
+    });
+
     setTrackedRequests(results);
     setHasSearched(true);
   };
@@ -1456,7 +1607,8 @@ export default function App() {
       total: finalTotal,
       date: new Date().toISOString(),
       invoiceNumber: invoiceCode,
-      notes: txNotes.trim()
+      notes: txNotes.trim(),
+      paymentCurrency: txPaymentCurrency !== 'SAR' ? txPaymentCurrency : undefined
     };
 
     setTransactions([newTx, ...transactions]);
@@ -1464,6 +1616,7 @@ export default function App() {
     // Cleanup inputs
     setTxClientName('');
     setTxNotes('');
+    setTxPaymentCurrency('SAR');
     
     // reset to original service parameters
     if (services.length > 0) {
@@ -1547,6 +1700,7 @@ export default function App() {
       govFee: Number(newSrvGovFee) || 0,
       officeFee: Number(newSrvOfficeFee) || 0,
       category: newSrvCategory,
+      subCategory: newSrvSubCategory,
       icon: newSrvIcon,
       additionalFees: newSrvAdditionalFees,
       baseCurrency: newSrvBaseCurrency,
@@ -1564,6 +1718,7 @@ export default function App() {
     setNewSrvBaseCurrency('SAR');
     setNewSrvBaseGovFee(0);
     setNewSrvBaseOfficeFee(0);
+    setNewSrvSubCategory('');
     setIconSearchNew('');
     setNewSrvAdditionalFees([]);
     setTempFeeNameNew('');
@@ -2593,25 +2748,117 @@ export default function App() {
                   <h2 className="text-2xl font-black text-slate-900">دليل الخدمات والتكاليف والرسوم</h2>
                   <p className="text-slate-500 text-sm mt-1">تحديد دقيق وموثق للتكاليف الإدارية للمكتب والرسوم التابعة للدولة قبل البدء بالمعاملة.</p>
                 </div>
-                <span className="text-xs bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold px-3 py-1.5 rounded-full mt-2 md:mt-0">
+                <span className="text-xs bg-slate-200 text-slate-600 hover:bg-slate-300 font-bold px-3 py-1.5 rounded-full mt-2 md:mt-0 font-sans">
                   محدثة حسب اللوائح الضريبية لعام 2026 (15%)
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {services.slice(0, visibleServicesCount).map(s => (
-                  <ServiceParallaxCard 
-                    key={s.id}
-                    service={s}
-                    onSelect={(serviceId) => {
-                      setSelectedServiceId(serviceId);
-                      // Scroll to form smoothly
-                      document.getElementById('booking-anchor')?.scrollIntoView({ behavior: 'smooth' });
+              {/* Category & Sub-category Filter Tabs */}
+              <div className="bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4 md:p-5 space-y-4 text-right">
+                <div className="flex flex-wrap items-center gap-1.5 justify-start">
+                  <span className="text-[11px] font-sans font-black text-slate-500 ml-2">🗂️ {lang === 'en' ? 'Main Category:' : 'الفئة الإدارية:'}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHomeFilterCategory('all');
+                      setHomeFilterSubCategory('all');
                     }}
-                    onDetails={(service) => setInfoPopupService(service)}
-                    renderIcon={renderServiceIcon}
-                  />
-                ))}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer ${
+                      homeFilterCategory === 'all' 
+                        ? 'bg-slate-950 text-white shadow-3xs' 
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-205'
+                    }`}
+                  >
+                    <span>{lang === 'en' ? 'All Services' : 'كافة الخدمات والتعقيب'}</span>
+                  </button>
+                  {categories.map(cat => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        setHomeFilterCategory(cat.id);
+                        setHomeFilterSubCategory('all');
+                      }}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-black transition-all cursor-pointer ${
+                        homeFilterCategory === cat.id 
+                          ? 'bg-amber-600 text-slate-950 shadow-3xs border border-amber-650' 
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-205'
+                      }`}
+                    >
+                      <span>{cat.nameAr}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Subcategory pills rendered only when specific category is active */}
+                {homeFilterCategory !== 'all' && (
+                  <div className="flex flex-wrap items-center gap-1.5 justify-start pt-3.5 border-t border-slate-200/50">
+                    <span className="text-[11px] font-sans font-black text-slate-400 ml-2">🏷️ {lang === 'en' ? 'Subcategory:' : 'النوع الفرعي التابع:'}</span>
+                    <button
+                      type="button"
+                      onClick={() => setHomeFilterSubCategory('all')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        homeFilterSubCategory === 'all' 
+                          ? 'bg-slate-700 text-white shadow-3xs' 
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium'
+                      }`}
+                    >
+                      <span>{lang === 'en' ? 'Show All' : 'الكل'}</span>
+                    </button>
+                    {subCategories.filter(sc => sc.parentId === homeFilterCategory).length === 0 ? (
+                      <span className="text-[10px] text-slate-400 italic">لا توجد باقات أو فروع فرعية مضافة تحت هذه الفئة بعد.</span>
+                    ) : (
+                      subCategories.filter(sc => sc.parentId === homeFilterCategory).map(sc => (
+                        <button
+                          key={sc.id}
+                          type="button"
+                          onClick={() => setHomeFilterSubCategory(sc.id)}
+                          className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            homeFilterSubCategory === sc.id 
+                              ? 'bg-indigo-600 text-white shadow-3xs' 
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium'
+                          }`}
+                        >
+                          <span>{sc.nameAr}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {(() => {
+                  const filteredList = services.filter(s => {
+                    const matchesCat = homeFilterCategory === 'all' || s.category === homeFilterCategory;
+                    const matchesSub = homeFilterSubCategory === 'all' || s.subCategory === homeFilterSubCategory;
+                    return matchesCat && matchesSub;
+                  });
+
+                  if (filteredList.length === 0) {
+                    return (
+                      <div className="col-span-full py-16 text-center bg-slate-50 rounded-3xl border border-slate-200/60 text-slate-500 font-sans">
+                        <span className="text-3xl block mb-2">⚠️</span>
+                        <p className="text-sm font-black text-slate-800">عذراً، لا تتوفر أي خدمات نشطة في مكتب سما ضمن التصاميم والمحدد حالياً.</p>
+                        <p className="text-xs text-slate-400 mt-1.5 font-sans">تفضل بتغيير خيارات التصفية أو تصفح الأقسام الأخرى.</p>
+                      </div>
+                    );
+                  }
+
+                  return filteredList.slice(0, visibleServicesCount).map(s => (
+                    <ServiceParallaxCard 
+                      key={s.id}
+                      service={s}
+                      onSelect={(serviceId) => {
+                        setSelectedServiceId(serviceId);
+                        // Scroll to form smoothly
+                        document.getElementById('booking-anchor')?.scrollIntoView({ behavior: 'smooth' });
+                      }}
+                      onDetails={(service) => setInfoPopupService(service)}
+                      renderIcon={renderServiceIcon}
+                    />
+                  ));
+                })()}
               </div>
 
               {services.length > 10 && (
@@ -3627,7 +3874,50 @@ export default function App() {
 
                             <div className="px-2">
                               <h3 className="text-base font-black text-slate-900 group-hover:text-blue-600 transition-colors mb-2 text-right">{a.title}</h3>
-                              <p className="text-xs text-slate-600 leading-relaxed font-sans font-medium whitespace-pre-wrap text-right">{a.content}</p>
+                              <p className="text-xs text-slate-600 leading-relaxed font-sans font-medium whitespace-pre-wrap text-right mb-3">{a.content}</p>
+
+                              {/* Image Announcement Media Display with Lightbox launch */}
+                              {a.mediaType === 'image' && a.mediaUrl && (
+                                <div 
+                                  onClick={() => setActiveMediaLightbox({ url: a.mediaUrl!, title: a.title, isVideo: false })}
+                                  className="mt-3 mb-1.5 rounded-xl overflow-hidden border border-slate-150 max-h-72 flex justify-center bg-slate-50 cursor-zoom-in relative group/media select-none"
+                                >
+                                  <img 
+                                    src={a.mediaUrl} 
+                                    alt={a.title} 
+                                    className="object-cover w-full h-full max-h-72 transition-transform duration-500 group-hover/media:scale-[1.03]"
+                                    referrerPolicy="no-referrer"
+                                  />
+                                  <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/media:opacity-100 transition-opacity flex items-center justify-center">
+                                    <div className="bg-slate-900/90 text-white rounded-full p-2 px-3 text-xs font-bold flex items-center gap-1 shadow-md">
+                                      <Eye className="w-3.5 h-3.5 text-amber-500" />
+                                      <span>{lang === 'ar' ? 'تكبير العرض' : 'Zoom Image'}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Video Announcement Media Display with full inline controls plus optional Lightbox expansion */}
+                              {a.mediaType === 'video' && a.mediaUrl && (
+                                <div className="mt-3 mb-1.5 rounded-xl overflow-hidden border border-slate-150 bg-slate-950 max-h-72 flex flex-col justify-center relative group/media select-none">
+                                  <video 
+                                    src={a.mediaUrl} 
+                                    controls 
+                                    className="w-full h-full max-h-64 object-contain"
+                                  />
+                                  <div className="absolute top-3 left-3 z-10 opacity-0 group-hover/media:opacity-100 transition-opacity">
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveMediaLightbox({ url: a.mediaUrl!, title: a.title, isVideo: true })}
+                                      className="bg-black/70 hover:bg-black text-white hover:text-amber-500 p-1.5 rounded-lg text-[10px] font-bold border border-white/10 transition-all flex items-center gap-1 cursor-pointer"
+                                      title={lang === 'ar' ? 'مسرح عرض الفيديو الأكبر' : 'Expand Video Theater'}
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      <span>{lang === 'ar' ? 'مسرح السينما' : 'Cinema Theater'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* Announcement Shared button */}
@@ -3666,6 +3956,56 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* Active Announcement Media Lightbox Modal */}
+            {activeMediaLightbox && (
+              <div 
+                className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-md p-4 md:p-8 animate-fade-in select-none"
+                onClick={() => setActiveMediaLightbox(null)}
+              >
+                {/* Close Button */}
+                <button 
+                  onClick={() => setActiveMediaLightbox(null)}
+                  className="absolute top-4 right-4 md:top-6 md:right-6 bg-slate-900 border border-white/10 text-slate-300 hover:text-white p-2.5 rounded-full hover:bg-slate-800 transition-all z-55 cursor-pointer flex items-center justify-center shadow-lg"
+                  title={lang === 'ar' ? 'إغلاق نافذة المرفقات' : 'Exit Full View'}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+
+                {/* Content Container */}
+                <div 
+                  className="max-w-5xl w-full max-h-[85vh] flex flex-col items-center justify-center space-y-4 animate-scale-up"
+                  onClick={(e) => e.stopPropagation()} // Stop propagation to prevent closing
+                >
+                  {/* Media Content */}
+                  <div className="relative w-full max-h-[75vh] rounded-2xl overflow-hidden border border-white/10 bg-slate-900 flex justify-center items-center shadow-2xl">
+                    {activeMediaLightbox.isVideo ? (
+                      <video 
+                        src={activeMediaLightbox.url} 
+                        controls 
+                        autoPlay
+                        className="max-w-full max-h-[75vh] object-contain"
+                      />
+                    ) : (
+                      <img 
+                        src={activeMediaLightbox.url} 
+                        alt={activeMediaLightbox.title} 
+                        className="max-w-full max-h-[75vh] object-contain"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                  </div>
+
+                  {/* Title Bar */}
+                  <div className="bg-slate-900/80 border border-white/5 backdrop-blur-xs p-3.5 px-6 rounded-2xl max-w-2xl w-full text-center shadow-xl">
+                    <span className="text-[10px] bg-amber-500/10 border border-amber-500/20 text-amber-500 px-2.5 py-0.5 rounded-full font-black mb-1.5 inline-block">
+                      {lang === 'ar' ? 'العرض المكبر للمرفق' : 'Full Screen Attachment'}
+                    </span>
+                    <h4 className="text-sm font-black text-white leading-relaxed">{activeMediaLightbox.title}</h4>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Quick Job Application Modal Dialogue */}
             {selectedApplyJob && (
@@ -4238,18 +4578,167 @@ export default function App() {
                     <h3 className="text-lg font-bold text-slate-950 font-sans">إدارة طلبات المعاملات والتعقيب المرفوعة</h3>
                     <p className="text-slate-500 text-xs mt-1 font-sans">طلبات العملاء تأتي من الموقع الخارجي؛ يمكنك مراجعتها، تحديث حالاتها، أو ترحيلها مباشرة كمستند فاتورة مالي.</p>
                   </div>
-                  <span className="text-xs bg-slate-200 font-bold px-2.5 py-1 rounded-full text-slate-700 font-sans font-sans">إجمالي الطلبات: {bookings.length}</span>
+                  <span className="text-xs bg-slate-200 font-bold px-2.5 py-1 rounded-full text-slate-700 font-sans">
+                    المطابقة: {filteredBookings.length} من أصل {bookings.length}
+                  </span>
+                </div>
+
+                {/* Advanced Search & Filtering Bar */}
+                <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl space-y-3 font-sans text-xs">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    {/* Search text */}
+                    <div className="col-span-1 md:col-span-2 relative">
+                      <label className="block text-slate-700 font-bold mb-1">البحث بالاسم، رقم الجوال أو ملاحظات الطلب:</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={reqSearchPhoneOrName}
+                          onChange={(e) => setReqSearchPhoneOrName(e.target.value)}
+                          placeholder="اكتب اسم العميل، جواله، أو أي ملاحظات..."
+                          className="w-full pr-8 pl-3 py-2 border border-slate-300 rounded focus:outline-none focus:border-slate-800 text-xs"
+                        />
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-3" />
+                      </div>
+                    </div>
+
+                    {/* Filter by Service */}
+                    <div>
+                      <label className="block text-slate-705 text-slate-700 font-bold mb-1">تصفية حسب نوع الخدمة:</label>
+                      <select
+                        value={reqFilterServiceId}
+                        onChange={(e) => setReqFilterServiceId(e.target.value)}
+                        className="w-full p-2 border border-slate-300 bg-white rounded focus:outline-none focus:border-slate-800 text-xs"
+                      >
+                        <option value="all">جميع الخدمات المتاحة</option>
+                        {services.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Filter by Payment Status */}
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">تصفية بحالة السداد المالي للطلب:</label>
+                      <select
+                        value={reqFilterPaymentStatus}
+                        onChange={(e) => setReqFilterPaymentStatus(e.target.value)}
+                        className="w-full p-2 border border-slate-300 bg-white rounded focus:outline-none focus:border-slate-800 text-xs"
+                      >
+                        <option value="all">مسددة وغير مسددة</option>
+                        <option value="paid">💳 مسددة بالكامل</option>
+                        <option value="processing_transfer">⏳ بانتظار مراجعة التحويل</option>
+                        <option value="unpaid">💵 دفع بالمنشأة / معلق</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 border-t border-slate-200">
+                    {/* Date filter select */}
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">تاريخ تقديم معاملة الحجز:</label>
+                      <select
+                        value={reqFilterDate}
+                        onChange={(e) => setReqFilterDate(e.target.value)}
+                        className="w-full p-2 border border-slate-300 bg-white rounded focus:outline-none focus:border-slate-800 text-xs"
+                      >
+                        <option value="all">كامل الأرشيف الـمتاح</option>
+                        <option value="today">اليوم فقط</option>
+                        <option value="7days">آخر 7 أيام</option>
+                        <option value="30days">آخر 30 يوماً</option>
+                        <option value="custom">فترة تاريخية مخصصة...</option>
+                      </select>
+                    </div>
+
+                    {/* Custom Start / End Dates */}
+                    {reqFilterDate === 'custom' && (
+                      <>
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1">من تاريخ:</label>
+                          <input
+                            type="date"
+                            value={reqFilterStartDate}
+                            onChange={(e) => setReqFilterStartDate(e.target.value)}
+                            className="w-full p-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1">إلى تاريخ:</label>
+                          <input
+                            type="date"
+                            value={reqFilterEndDate}
+                            onChange={(e) => setReqFilterEndDate(e.target.value)}
+                            className="w-full p-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 text-xs"
+                          />
+                        </div>
+                      </>
+                    )}
+
+                    {/* Sort Key */}
+                    <div className={reqFilterDate === 'custom' ? 'col-span-1' : 'col-span-1 md:col-span-3'}>
+                      <label className="block text-slate-700 font-bold mb-1">ترتيب فرز المعاملات:</label>
+                      <select
+                        value={reqSortKey}
+                        onChange={(e) => setReqSortKey(e.target.value)}
+                        className="w-full p-2 border border-slate-300 bg-white rounded focus:outline-none focus:border-slate-800 text-xs"
+                      >
+                        <option value="date-desc">الفرز من الأحدث تاريخاً للأقدم</option>
+                        <option value="date-asc">الفرز من الأقدم تاريخاً للأحدث</option>
+                        <option value="name-asc">اسم العميل أبجدياً (أ-ي)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Clear filter button if active */}
+                  {(reqSearchPhoneOrName || reqFilterServiceId !== 'all' || reqFilterPaymentStatus !== 'all' || reqFilterDate !== 'all') && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReqSearchPhoneOrName('');
+                          setReqFilterServiceId('all');
+                          setReqFilterPaymentStatus('all');
+                          setReqFilterDate('all');
+                          setReqFilterStartDate('');
+                          setReqFilterEndDate('');
+                          setReqSortKey('date-desc');
+                        }}
+                        className="text-amber-850 hover:text-amber-955 font-bold underline transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>إعادة ضبط وعرض كافة المعاملات</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {bookings.length === 0 ? (
                   <div className="text-center py-10 bg-white border border-stone-200 rounded-lg text-slate-400 text-sm font-sans">
                     لا تتوفر طلبات مرفوعة حالياً من الموقع بانتظار معاملات جديدة.
                   </div>
+                ) : filteredBookings.length === 0 ? (
+                  <div className="text-center py-12 bg-white border border-slate-200 rounded-xl shadow-xs text-slate-400 text-sm font-sans">
+                    لم نجد أي طلبات مطابقة لمعايير البحث والتصفية المحددة حالياً.
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReqSearchPhoneOrName('');
+                        setReqFilterServiceId('all');
+                        setReqFilterPaymentStatus('all');
+                        setReqFilterDate('all');
+                        setReqFilterStartDate('');
+                        setReqFilterEndDate('');
+                        setReqSortKey('date-desc');
+                      }}
+                      className="block mx-auto mt-3 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-bold transition font-sans cursor-pointer"
+                    >
+                      عرض جميع الطلبات
+                    </button>
+                  </div>
                 ) : (
                   <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm font-sans">
                     {/* Mobile Card List: visible on small sizes */}
                     <div className="block @md:hidden divide-y divide-slate-100 font-sans text-xs">
-                      {bookings.map(b => (
+                      {filteredBookings.map(b => (
                         <div key={b.id} className="p-4 space-y-3 font-sans">
                           <div className="flex justify-between items-start font-sans">
                             <div>
@@ -4411,13 +4900,207 @@ export default function App() {
                           </div>
                         ))}
                       </div>
+
+                      {/* Desktop Table Layout: visible on larger screens */}
+                      <div className="hidden @md:block overflow-x-auto font-sans">
+                        <table className="w-full text-right text-xs">
+                          <thead className="bg-[#f8fafc] border-b border-slate-200 text-slate-700 font-bold font-sans">
+                            <tr>
+                              <th className="p-4">العميل المستفيد وجواله</th>
+                              <th className="p-4">الخدمة المطلوبة</th>
+                              <th className="p-4">تاريخ المرفق</th>
+                              <th className="p-4 text-center font-sans">الوضعية الحالية للطلب</th>
+                              <th className="p-4 text-left font-sans">العمليات الإدارية الفورية</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-150 font-sans">
+                            {filteredBookings.map(b => (
+                              <tr key={b.id} className="hover:bg-slate-50 transition-colors font-sans">
+                                <td className="p-4 font-sans">
+                                  <strong className="text-slate-900 block text-sm font-sans">{b.clientName}</strong>
+                                  <div className="flex flex-wrap gap-1.5 items-center mt-0.5 font-sans">
+                                    <span className="text-slate-500 font-mono text-[11px] tracking-wide">{b.phoneNumber}</span>
+                                    {b.paymentStatus ? (
+                                      <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold font-sans ${
+                                        b.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-800' :
+                                        b.paymentStatus === 'processing_transfer' ? 'bg-indigo-100 text-indigo-805' :
+                                        'bg-amber-100 text-amber-850'
+                                      }`}>
+                                        {b.paymentStatus === 'paid' && `💳 مسددة (${b.paymentMethod?.toUpperCase()})`}
+                                        {b.paymentStatus === 'processing_transfer' && `⏳ بانتظار مراجعة التحويل`}
+                                        {b.paymentStatus === 'unpaid' && `💵 دفع نقدي بالمنشأة`}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] bg-slate-100 text-slate-650 px-1.5 py-0.2 rounded font-bold font-sans">💵 سداد غير محدد</span>
+                                    )}
+                                  </div>
+                                  {b.notes && (
+                                    <p className="text-[11px] text-slate-500 mt-1 max-w-sm font-sans line-clamp-2" title={b.notes}>
+                                      <strong>ملاحظات:</strong> {b.notes}
+                                    </p>
+                                  )}
+                                  {getBookingFiles(b).length > 0 && (
+                                    <div className="mt-2 space-y-1.5 max-w-sm font-sans">
+                                      <p className="text-[10px] font-extrabold text-slate-400">المستندات الرسمية ({getBookingFiles(b).length}):</p>
+                                      {getBookingFiles(b).map((file, fIdx) => (
+                                        <div key={fIdx} className="flex items-center gap-1.5 flex-wrap font-sans">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedViewBooking(b);
+                                              setPreviewFile(file);
+                                            }}
+                                            className="inline-flex items-center gap-1.5 text-[10px] font-bold text-emerald-850 bg-emerald-50/70 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md transition-colors"
+                                            title="اضغط لمعاينة هذا الملف PDF تفاعلياً"
+                                          >
+                                            <Paperclip className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                                            <span className="truncate max-w-[130px] font-sans" title={file.name}>{file.name}</span>
+                                            <span className="text-[9px] text-slate-400 font-mono">({file.size})</span>
+                                          </button>
+                                          {file.data && (
+                                            <a
+                                              href={file.data}
+                                              download={file.name}
+                                              className="inline-flex items-center gap-1 text-[9px] font-extrabold text-slate-950 bg-amber-500 hover:bg-amber-600 border border-amber-600 px-1.5 py-0.5 rounded cursor-pointer"
+                                              title="تنزيل المستند مباشرة"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <Download className="w-2.5 h-2.5" />
+                                              <span>تنزيل</span>
+                                            </a>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex flex-col gap-1 max-w-[180px] font-sans">
+                                    <select
+                                      value={b.serviceId}
+                                      onChange={(e) => handleUpdateBookingService(b.id, e.target.value)}
+                                      className="p-1.5 text-xs font-bold rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 cursor-pointer font-sans shadow-3xs"
+                                      title="ربط وتعديل ارتباط هذا الطلب بخدمة أخرى من دليل الخدمات لتتبع أدائه المالي والعملياتي"
+                                    >
+                                      {services.map(s => (
+                                        <option key={s.id} value={s.id}>
+                                          {s.name} ({s.officeFee} ر.س)
+                                        </option>
+                                      ))}
+                                      {!services.some(s => s.id === b.serviceId) && (
+                                        <option value={b.serviceId} disabled>
+                                          {b.serviceName} (غير ملتصق بالدليل)
+                                        </option>
+                                      )}
+                                    </select>
+                                    <span className="text-[9px] text-slate-400 font-sans block">
+                                      معرّف الحزمة: <span className="font-mono text-[8px] bg-slate-100 px-1 py-0.5 rounded text-slate-600">{b.serviceId || 'srv-none'}</span>
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="p-4 font-mono text-slate-500 text-xs">
+                                  {new Date(b.date).toLocaleDateString('ar-SA')} 
+                                  <span className="block text-[10px] text-slate-400 mt-0.5 font-sans">
+                                    {new Date(b.date).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                </td>
+                                <td className="p-4 text-center">
+                                  <select
+                                    value={b.status}
+                                    onChange={(e) => handleUpdateBookingStatus(b.id, e.target.value as any)}
+                                    className={`p-1.5 text-xs font-bold font-sans rounded border bg-white focus:outline-none ${
+                                      b.status === 'completed' ? 'text-emerald-800 border-emerald-300 bg-emerald-50' :
+                                      b.status === 'processing' ? 'text-blue-800 border-blue-300 bg-blue-50' :
+                                      b.status === 'cancelled' ? 'text-red-800 border-red-300 bg-red-50' :
+                                      'text-amber-850 border-amber-300 bg-amber-50'
+                                    }`}
+                                  >
+                                    <option value="pending">قيد الانتظار لمراجعة الإدارة</option>
+                                    <option value="processing">تحت الإخراج والتعقيب</option>
+                                    <option value="completed">مكتملة ومستحقة الدفع</option>
+                                    <option value="cancelled">ملغية ومسحوبة</option>
+                                  </select>
+                                </td>
+                                <td className="p-4 text-left space-x-reverse space-x-1.5 flex flex-wrap gap-1 items-center justify-end font-sans">
+                                  {b.paymentStatus === 'processing_transfer' && (
+                                    <button
+                                      onClick={() => {
+                                        const updatedBookings = bookings.map(item => {
+                                          if (item.id === b.id) return { ...item, paymentStatus: 'paid' as const };
+                                          return item;
+                                        });
+                                        setBookings(updatedBookings);
+                                        
+                                        const updatedTxs = transactions.map(t => {
+                                          if (t.clientName.trim() === b.clientName.trim() && t.serviceName.trim() === b.serviceName.trim()) {
+                                            return {
+                                              ...t,
+                                              notes: t.notes.replace('حوالة بنكية معلقة للدراسة والتدقيق المصرفي', 'مدفوعة بالكامل ومعتمدة بموجب تدقيق الإدارة')
+                                            };
+                                          }
+                                          return t;
+                                        });
+                                        setTransactions(updatedTxs);
+                                        alert('✅ تم اعتماد التحويل البنكي وتأكيد السداد!');
+                                      }}
+                                      className="bg-indigo-650 hover:bg-indigo-700 text-white px-2 py-1.5 rounded font-extrabold text-[10px] whitespace-nowrap transition-colors"
+                                      title="اعتماد الحوالة البنكية وتصفية الديون"
+                                    >
+                                      ✔ اعتماد التحويل
+                                    </button>
+                                  )}
+                                  {(() => {
+                                     const matchingTx = transactions.find(t => 
+                                       t.clientName.trim() === b.clientName.trim() && 
+                                       t.serviceName.trim() === b.serviceName.trim()
+                                     );
+                                     return matchingTx ? (
+                                       <button
+                                         onClick={() => {
+                                           setSelectedTx(matchingTx);
+                                           setIsInvoiceOpen(true);
+                                           setDirectPrintActive(true);
+                                         }}
+                                         className="bg-amber-500 hover:bg-amber-600 border border-amber-600 text-slate-950 px-2.5 py-1.5 rounded font-black text-[11px] flex items-center gap-1.5 transition-colors shadow-3xs cursor-pointer ml-1.5 font-sans"
+                                         title={lang === 'en' ? 'Print official simplified VAT invoice' : 'طباعة الفاتورة والعمولات المعتمدة'}
+                                       >
+                                          <Printer className="w-3.5 h-3.5" />
+                                          <span>{lang === 'en' ? 'Print' : 'طباعة'}</span>
+                                       </button>
+                                     ) : null;
+                                   })()}
+                                   <button
+                                     onClick={() => handlePreFillTransactionFromBooking(b)}
+                                     className="bg-slate-950 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded font-black text-[11px] transition-colors cursor-pointer font-sans"
+                                     title="ترحيل بيانات الطلب لإنشاء قيد مالي"
+                                   >
+                                     ترحيل لدفتر الفواتير المالية
+                                   </button>
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm('هل تريد حذف سجل الطلب هذا نهائياً من أرشيف المراجعة؟')) {
+                                        const filtered = bookings.filter(item => item.id !== b.id);
+                                        setBookings(filtered);
+                                      }
+                                    }}
+                                    className="p-1 px-1.5 text-red-650 hover:text-white hover:bg-red-605 border border-red-200 rounded transition-colors"
+                                    title="حذف من الأرشيف"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   )}
                 </div>
               )}
 
-            {/* --- ADMIN INTERNAL VIEW 2: CLIENT BOOKINGS MANAGER --- */}
-            {adminTab === 'requests' && (
+            {/* --- ADMIN INTERNAL VIEW 2: CLIENT BOOKINGS MANAGER (REDUNDANT DUPLICATE INACTIVE) --- */}
+            {adminTab === 'requests_inactive_duplicate_never_show' && (
               <div className="space-y-6">
                 <div className="flex justify-between items-center border-b border-slate-200 pb-3">
                   <div>
@@ -4644,7 +5327,7 @@ export default function App() {
                   </div>
 
                   <form onSubmit={handleAddTransactionSubmit} className="space-y-4 font-sans text-xs">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                       {/* Client Name */}
                       <div>
                         <label className="block text-slate-700 font-bold mb-1">اسم العميل بالكامل:</label>
@@ -4689,7 +5372,7 @@ export default function App() {
 
                       {/* Office administrative fee */}
                       <div>
-                        <label className="block text-slate-700 font-bold mb-1">أتعاب خدمات سما المملكة (ر.س):</label>
+                        <label className="block text-slate-700 font-bold mb-1">أتعاب خدمات متبعة (ر.س):</label>
                         <input
                           type="number"
                           required
@@ -4698,6 +5381,20 @@ export default function App() {
                           placeholder="0.00"
                           className="w-full p-2.5 border border-slate-300 rounded focus:outline-none focus:border-slate-800 text-sm font-mono"
                         />
+                      </div>
+
+                      {/* Preferred international customer currency selector */}
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">عملة السداد والمطابقة:</label>
+                        <select
+                          value={txPaymentCurrency}
+                          onChange={(e) => setTxPaymentCurrency(e.target.value as 'SAR' | 'USD' | 'EUR')}
+                          className="w-full p-2.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 text-sm font-sans font-bold text-amber-950"
+                        >
+                          <option value="SAR">🇸🇦 SAR (الريال)</option>
+                          <option value="USD">🇺🇸 USD (الدولار)</option>
+                          <option value="EUR">🇪🇺 EUR (اليورو)</option>
+                        </select>
                       </div>
                     </div>
 
@@ -4775,79 +5472,202 @@ export default function App() {
                       لا توجد فواتير ضريبية مقيدة بالدفتر المالي بعد.
                     </div>
                   ) : (
-                    <div className="bg-white border border-slate-250 rounded-xl overflow-hidden shadow-sm">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-right text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                              <th className="p-3">رقم الفاتورة</th>
-                              <th className="p-3">العميل</th>
-                              <th className="p-3">اسم الخدمة</th>
-                              <th className="p-3">رسوم الدولة</th>
-                              <th className="p-3">أتعاب المكتب</th>
-                              <th className="p-3">الضريبة</th>
-                              <th className="p-3">المجموع الكلي</th>
-                              <th className="p-3">تاريخ القيد</th>
-                              <th className="p-3 text-center">الإجراءات</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 text-slate-700">
-                            {transactions.map(t => (
-                              <tr key={t.id} className="hover:bg-slate-50 transition-colors">
-                                <td className="p-3 font-mono font-bold text-slate-900">{t.invoiceNumber}</td>
-                                <td className="p-3 font-bold">{t.clientName}</td>
-                                <td className="p-3">{t.serviceName}</td>
-                                <td className="p-3 font-mono">{t.govFee.toFixed(2)} ر.س</td>
-                                <td className="p-3 font-mono">{t.officeFee.toFixed(2)} ر.س</td>
-                                <td className="p-3 font-mono text-slate-500">{t.tax.toFixed(2)} ر.س</td>
-                                <td className="p-3 font-mono font-bold text-amber-800">{t.total.toFixed(2)} ر.س</td>
-                                <td className="p-3 text-slate-500">{new Date(t.date).toLocaleDateString('ar-SA')}</td>
-                                <td className="p-3 font-sans">
-                                  <div className="flex justify-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedTx(t);
-                                        setIsInvoiceOpen(true);
-                                      }}
-                                      className="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-300 rounded text-[11px] font-bold transition flex items-center gap-1"
-                                      title="معاينة الفاتورة"
-                                    >
-                                      <Eye className="w-3.5 h-3.5 text-sky-600" />
-                                      <span>معاينة</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedTx(t);
-                                        setIsInvoiceOpen(true);
-                                        setTimeout(() => {
-                                          setDirectPrintActive(true);
-                                        }, 180);
-                                      }}
-                                      className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 border border-amber-600 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-3xs"
-                                      title="طباعة الفاتورة مباشرة"
-                                    >
-                                      <Printer className="w-3.5 h-3.5" />
-                                      <span>طباعة</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteTransaction(t.id)}
-                                      className="p-1 border border-slate-150 text-red-650 hover:bg-red-50 hover:text-red-700 rounded transition"
-                                      title="إزالة القيد"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    <>
+                      {/* Search Bar / Batch Action Control Panel */}
+                      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200 font-sans">
+                        <div className="flex items-center gap-2 w-full max-w-md">
+                          <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                          <input
+                            type="text"
+                            value={ledgerSearchQuery}
+                            onChange={(e) => setLedgerSearchQuery(e.target.value)}
+                            placeholder={lang === 'en' ? 'Search by invoice #, client name or service...' : 'بحث في الفواتير برقم الفاتورة، اسم العميل، والخدمة...'}
+                            className="w-full text-xs bg-transparent border-none outline-none text-slate-800 placeholder-slate-400 font-sans focus:ring-0"
+                          />
+                          {ledgerSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setLedgerSearchQuery('')}
+                              className="text-xs text-slate-400 hover:text-slate-600 font-mono flex-shrink-0"
+                            >
+                              ✖ مسح
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Batch Action Section */}
+                        {selectedBatchTxIds.length > 0 && (
+                          <div className="flex items-center gap-2.5 flex-wrap text-xs bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-lg shadow-3xs animate-fade-in font-sans">
+                            <span className="font-bold text-amber-900 leading-none">
+                              {lang === 'en' 
+                                ? `${selectedBatchTxIds.length} invoice(s) selected` 
+                                : `تم تحديد عدد ${selectedBatchTxIds.length} فاتورة`}
+                            </span>
+                            
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsBatchPrintOpen(true);
+                              }}
+                              className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black px-3 py-1 rounded shadow-sm text-[11px] transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-slate-950" />
+                              <span>{lang === 'en' ? 'Bulk Print/PDF Hub' : 'طباعة وإصدار مجمع'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBatchTxIds([])}
+                              className="text-slate-500 hover:text-slate-800 hover:underline px-1.5 text-[11px] font-bold"
+                            >
+                              {lang === 'en' ? 'Clear Selection' : 'إعادة ضبط'}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    </div>
+
+                      {filteredTransactions.length === 0 ? (
+                        <div className="py-12 text-center text-slate-500 text-xs bg-white border border-slate-200 rounded-xl shadow-3xs flex flex-col items-center justify-center gap-2 font-sans">
+                          <span>🔍 لم يتم العثور على أي فواتير تطابق استعلام البحث الحالي: "{ledgerSearchQuery}"</span>
+                          <button
+                            type="button"
+                            onClick={() => setLedgerSearchQuery('')}
+                            className="mt-1 bg-slate-905 hover:bg-slate-800 text-slate-900 border border-slate-300 font-bold px-3 py-1 rounded text-[11px] transition-all"
+                          >
+                            إعادة ضبط البحث
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="bg-white border border-slate-250 rounded-xl overflow-hidden shadow-sm">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-right text-xs">
+                              <thead>
+                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none">
+                                  <th className="p-3 text-center w-12">
+                                    <input
+                                      type="checkbox"
+                                      checked={
+                                        filteredTransactions.length > 0 &&
+                                        filteredTransactions.every(t => selectedBatchTxIds.includes(t.id))
+                                      }
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          const allIds = filteredTransactions.map(t => t.id);
+                                          setSelectedBatchTxIds(prev => Array.from(new Set([...prev, ...allIds])));
+                                        } else {
+                                          const allIds = filteredTransactions.map(t => t.id);
+                                          setSelectedBatchTxIds(prev => prev.filter(id => !allIds.includes(id)));
+                                        }
+                                      }}
+                                      className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 border-slate-300 transition-all cursor-pointer"
+                                      title={lang === 'en' ? 'Select All Invoices' : 'تحديد كافة الفواتير'}
+                                    />
+                                  </th>
+                                  <th className="p-3">رقم الفاتورة</th>
+                                  <th className="p-3">العميل</th>
+                                  <th className="p-3">اسم الخدمة</th>
+                                  <th className="p-3">رسوم الدولة</th>
+                                  <th className="p-3">أتعاب المكتب</th>
+                                  <th className="p-3">الضريبة</th>
+                                  <th className="p-3">المجموع الكلي</th>
+                                  <th className="p-3">تاريخ القيد</th>
+                                  <th className="p-3 text-center">الإجراءات</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 text-slate-700">
+                                {filteredTransactions.map(t => {
+                                  const isChecked = selectedBatchTxIds.includes(t.id);
+                                  return (
+                                    <tr 
+                                      key={t.id} 
+                                      className={`hover:bg-slate-50/80 transition-colors ${
+                                        isChecked ? 'bg-amber-500/5 hover:bg-amber-500/8' : ''
+                                      }`}
+                                    >
+                                      <td className="p-3 text-center">
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => {
+                                            if (isChecked) {
+                                              setSelectedBatchTxIds(prev => prev.filter(id => id !== t.id));
+                                            } else {
+                                              setSelectedBatchTxIds(prev => [...prev, t.id]);
+                                            }
+                                          }}
+                                          className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 border-slate-300 transition-all cursor-pointer"
+                                        />
+                                      </td>
+                                      <td className="p-3 font-mono font-bold text-slate-900">{t.invoiceNumber}</td>
+                                      <td className="p-3 font-bold">{t.clientName}</td>
+                                      <td className="p-3">{t.serviceName}</td>
+                                      <td className="p-3 font-mono">{t.govFee.toFixed(2)} ر.س</td>
+                                      <td className="p-3 font-mono">{t.officeFee.toFixed(2)} ر.س</td>
+                                      <td className="p-3 font-mono text-slate-500">{t.tax.toFixed(2)} ر.س</td>
+                                      <td className="p-3 font-mono font-bold text-amber-800">{t.total.toFixed(2)} ر.س</td>
+                                      <td className="p-3 text-slate-500">{new Date(t.date).toLocaleDateString('ar-SA')}</td>
+                                      <td className="p-3 font-sans">
+                                        <div className="flex justify-center gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedTx(t);
+                                              setIsInvoiceOpen(true);
+                                            }}
+                                            className="px-2 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-300 rounded text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                            title="معاينة الفاتورة"
+                                          >
+                                            <Eye className="w-3.5 h-3.5 text-sky-600" />
+                                            <span>معاينة</span>
+                                           </button>
+                                           <button
+                                             type="button"
+                                             onClick={() => {
+                                               setSelectedTx(t);
+                                               setInvoiceInitialPdfActive(true);
+                                               setIsInvoiceOpen(true);
+                                             }}
+                                             className="px-2 py-1 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-300 rounded text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                             title="معاينة الطباعة - تنسيق عالي الدقة A4"
+                                           >
+                                             <Sparkles className="w-3.5 h-3.5 text-violet-600" />
+                                             <span>معاينة الطباعة</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedTx(t);
+                                              setIsInvoiceOpen(true);
+                                              setTimeout(() => {
+                                                setDirectPrintActive(true);
+                                              }, 180);
+                                            }}
+                                            className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 border border-amber-600 rounded text-[11px] font-bold transition flex items-center gap-1 shadow-3xs cursor-pointer"
+                                            title="طباعة الفاتورة مباشرة"
+                                          >
+                                            <Printer className="w-3.5 h-3.5" />
+                                            <span>طباعة</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleDeleteTransaction(t.id)}
+                                            className="p-1 border border-slate-150 text-red-650 hover:bg-red-50 hover:text-red-700 rounded transition cursor-pointer"
+                                            title="إزالة القيد"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
                   )}
+                </>
+              )}
                 </div>
               </div>
             )}
@@ -5404,7 +6224,7 @@ export default function App() {
                           <span className="text-sm font-black">المعلومات الأساسية والهوية التصنيفية</span>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                             <label className="block text-slate-800 font-bold mb-1.5">* اسم الخدمة بالكامل (أو نوع المعاملة):</label>
                             <div className="relative">
@@ -5427,11 +6247,33 @@ export default function App() {
                             <div className="relative">
                               <select
                                 value={newSrvCategory}
-                                onChange={(e) => setNewSrvCategory(e.target.value)}
+                                onChange={(e) => {
+                                  setNewSrvCategory(e.target.value);
+                                  setNewSrvSubCategory('');
+                                }}
                                 className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm text-slate-900 transition-colors"
                               >
                                 {categories.map(cat => (
                                   <option key={cat.id} value={cat.id}>{cat.nameAr}</option>
+                                ))}
+                              </select>
+                              <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                                <ListFilter className="h-4.5 w-4.5 text-slate-400" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-slate-800 font-bold mb-1.5">الفئة الفرعية المخصصة (اختياري):</label>
+                            <div className="relative">
+                              <select
+                                value={newSrvSubCategory}
+                                onChange={(e) => setNewSrvSubCategory(e.target.value)}
+                                className="w-full pr-10 pl-3 py-2.5 border border-slate-300 rounded bg-white focus:outline-none focus:border-slate-800 focus:ring-1 focus:ring-slate-800 text-sm text-slate-900 transition-colors"
+                              >
+                                <option value="">-- عام / بدون فئة فرعية --</option>
+                                {subCategories.filter(sc => sc.parentId === newSrvCategory).map(sc => (
+                                  <option key={sc.id} value={sc.id}>{sc.nameAr}</option>
                                 ))}
                               </select>
                               <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
@@ -5997,6 +6839,159 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* --- SUB-CATEGORY MANAGEMENT SECTION --- */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-205 shadow-sm space-y-6 text-right font-sans">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-amber-50 p-2 rounded-xl border border-amber-150 text-amber-700">
+                        <FolderPlus className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-950 text-sm">إدارة وتخصيص الفئات الفرعية (Sub-Categories)</h4>
+                        <p className="text-slate-500 text-[11px] mt-0.5 font-sans">إنشاء وتعديل فئات فرعية مخصصة تندرج تحت الفئات الإدارية الرئيسية لتجميع وتنظيم باقات الخدمات والتعقيب بشكل أدق.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs font-sans">
+                    
+                    {/* Add Sub-Category Form (Col 1) */}
+                    <div className="bg-slate-50 border border-slate-200 p-5 rounded-xl space-y-4 text-right">
+                      <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-150 pb-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                        <span className="font-bold">إضافة فئة فرعية جديدة</span>
+                      </h5>
+
+                      <div className="space-y-3.5">
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 font-sans">الفئة الرئيسية التابعة لها أولاً:</label>
+                          <select
+                            value={newSubCatParentId}
+                            onChange={(e) => setNewSubCatParentId(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-850"
+                          >
+                            {categories.map(cat => (
+                              <option key={cat.id} value={cat.id}>{cat.nameAr}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-705 font-bold mb-1 font-sans">معرّف الفئة الفرعية الفريد (بالإنجليزي):</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثلاً: private-driver, commercial-visas"
+                            value={newSubCatId}
+                            onChange={(e) => setNewSubCatId(e.target.value.toLowerCase().trim().replace(/[^a-z0-9_-]/g, ''))}
+                            className="w-full p-2.5 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-850"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-bold mb-1 font-sans">اسم الفئة الفرعية (بالعربية للعملاء):</label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="مثلاً: تفويض سائقين واستقدام منزلي"
+                            value={newSubCatNameAr}
+                            onChange={(e) => setNewSubCatNameAr(e.target.value)}
+                            className="w-full p-2.5 border border-slate-300 rounded bg-white text-slate-900 text-xs focus:outline-none focus:border-slate-850"
+                          />
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!newSubCatId || !newSubCatNameAr || !newSubCatParentId) {
+                              alert('من فضلك أكمل كافة خانات الفئة الفرعية أولاً.');
+                              return;
+                            }
+                            if (subCategories.some(sc => sc.id === newSubCatId)) {
+                              alert('معرف الفئة الفرعية متواجد بالفعل، يرجى تدوين رمز تعريفي متميز.');
+                              return;
+                            }
+                            const updated = [...subCategories, { id: newSubCatId, parentId: newSubCatParentId, nameAr: newSubCatNameAr }];
+                            setSubCategories(updated);
+                            setNewSubCatId('');
+                            setNewSubCatNameAr('');
+                            alert('تم تسجيل وتفعيل الفئة الفرعية الجديدة بنجاح تحت الفئة المحددة!');
+                          }}
+                          className="w-full bg-slate-950 hover:bg-slate-850 text-white font-black py-2.5 px-4 rounded-lg transition text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                        >
+                          <PlusCircle className="w-4 h-4" />
+                          <span>تنشيط وتفعيل الفئة الفرعية</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Display Current Registered Sub-categories list grouped by category */}
+                    <div className="md:col-span-2 border border-slate-200 p-5 rounded-xl space-y-4 bg-slate-50/40 text-right">
+                      <h5 className="font-bold text-slate-900 text-xs flex items-center gap-1.5 border-b border-slate-150 pb-2">
+                        <span>إحصائيات وقائمة الفئات الفرعية النشطة ({subCategories.length})</span>
+                      </h5>
+
+                      <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
+                        {categories.map(cat => {
+                          const associatedSubs = subCategories.filter(sc => sc.parentId === cat.id);
+                          const catStyles = getCategoryStyles(cat.id);
+                          return (
+                            <div key={cat.id} className="bg-white border border-slate-155 rounded-xl p-3.5 space-y-2.5">
+                              <div className="flex items-center gap-2 pb-1.5 border-b border-slate-100 font-sans">
+                                <span className={`w-2.5 h-2.5 rounded-full ${catStyles.bg}`}></span>
+                                <span className="font-extrabold text-slate-950 text-xs">{cat.nameAr}</span>
+                                <span className="text-[9px] text-slate-400 font-mono bg-slate-100 px-2 py-0.5 rounded-md">رمز الفئة: {cat.id}</span>
+                              </div>
+
+                              {associatedSubs.length === 0 ? (
+                                <p className="text-[10px] text-slate-400 italic">لا توجد فئات فرعية مضافة تحت هذه الفئة حتى الآن.</p>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {associatedSubs.map(sc => {
+                                    const associatedServicesCount = services.filter(s => s.subCategory === sc.id).length;
+                                    const isDefaultSub = ['visa-work', 'visa-hajj', 'visa-visit', 'gov-labor', 'gov-jawazat', 'gov-municipality', 'transport-land', 'transport-air'].includes(sc.id);
+                                    return (
+                                      <div key={sc.id} className="bg-slate-50/70 border border-slate-200 p-2.5 rounded-lg flex items-center justify-between text-right">
+                                        <div className="space-y-0.5">
+                                          <strong className="text-slate-805 text-[11px] block font-bold leading-tight">{sc.nameAr}</strong>
+                                          <span className="text-[9px] text-slate-400 block font-mono">الرمز: {sc.id} • مرتبطة بـ ({associatedServicesCount}) خدمات</span>
+                                        </div>
+                                        
+                                        {!isDefaultSub && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              if (associatedServicesCount > 0) {
+                                                alert('لا يمكن حذف هذه الفئة الفرعية لأن هناك خدمات نشطة مرتبطة بها حالياً. يرجى تعديل تلك الخدمات أو نقلها أولاً.');
+                                                return;
+                                              }
+                                              if (confirm(`هل أنت متأكد من حذف الفئة الفرعية المخصصة "${sc.nameAr}"؟`)) {
+                                                setSubCategories(subCategories.filter(item => item.id !== sc.id));
+                                              }
+                                            }}
+                                            className="p-1 text-red-500 hover:bg-red-50 hover:text-red-750 rounded transition-colors cursor-pointer"
+                                            title="إزالة هذه الفئة الفرعية"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="bg-amber-500/5 border border-amber-500/10 p-3 rounded-xl text-[10px] text-amber-850 leading-relaxed font-sans">
+                        💡 <strong className="font-extrabold text-amber-900">إرشادات الفئات الفرعية:</strong> عند إنشاء فئات فرعية مخصصة، ستظهر فوراً في نماذج إضافة وتعديل أسعار ومعاملات السفر والتعقيب بالمكتب لتنظيم الخدمات المخصصة للجمهور.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Directory listing and search tools */}
                 <div className="space-y-5 bg-slate-50/70 border border-slate-200 rounded-2xl p-6">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
@@ -6318,16 +7313,33 @@ export default function App() {
                                     </div>
                                   </div>
 
-                                  <div className="grid grid-cols-2 gap-3">
+                                  <div className="grid grid-cols-3 gap-3">
                                     <div>
                                       <label className="block text-slate-900 font-bold mb-1">فئة الخدمة:</label>
                                       <select
                                         value={editingService.category}
-                                        onChange={(e) => setEditingService({ ...editingService, category: e.target.value })}
+                                        onChange={(e) => setEditingService({ 
+                                          ...editingService, 
+                                          category: e.target.value,
+                                          subCategory: ''
+                                        })}
                                         className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-xs text-slate-900 font-medium font-sans"
                                       >
                                         {categories.map(cat => (
                                           <option key={cat.id} value={cat.id}>{cat.nameAr}</option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-slate-900 font-bold mb-1">الفئة الفرعية التابعة (اختياري):</label>
+                                      <select
+                                        value={editingService.subCategory || ''}
+                                        onChange={(e) => setEditingService({ ...editingService, subCategory: e.target.value })}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg bg-white text-xs text-slate-900 font-medium font-sans"
+                                      >
+                                        <option value="">-- عام / بدون فئة فرعية --</option>
+                                        {subCategories.filter(sc => sc.parentId === editingService.category).map(sc => (
+                                          <option key={sc.id} value={sc.id}>{sc.nameAr}</option>
                                         ))}
                                       </select>
                                     </div>
@@ -6528,6 +7540,11 @@ export default function App() {
                                       <span className={`inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${badgeStyle} font-sans`}>
                                         {getCategoryName(s.category)}
                                       </span>
+                                      {s.subCategory && (
+                                        <span className="inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-slate-250 bg-slate-50 text-slate-700 font-sans mr-1.5 shadow-3xs">
+                                          {getSubCategoryName(s.subCategory)}
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
 
@@ -7683,12 +8700,16 @@ export default function App() {
                               content: '',
                               category: 'news',
                               date: new Date().toISOString().split('T')[0],
-                              isPinned: false
+                              isPinned: false,
+                              mediaType: 'none',
+                              mediaUrl: ''
                             });
                             setAdminAnnTitle('');
                             setAdminAnnContent('');
                             setAdminAnnCategory('news');
                             setAdminAnnIsPinned(false);
+                            setAdminAnnMediaType('none');
+                            setAdminAnnMediaUrl('');
                           }
                         }}
                         className="px-3.5 py-1.5 bg-slate-900 text-amber-500 rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer flex items-center gap-1"
@@ -7712,7 +8733,9 @@ export default function App() {
                             title: adminAnnTitle.trim(),
                             content: adminAnnContent.trim(),
                             category: adminAnnCategory,
-                            isPinned: adminAnnIsPinned
+                            isPinned: adminAnnIsPinned,
+                            mediaType: adminAnnMediaType,
+                            mediaUrl: adminAnnMediaUrl
                           };
 
                           setAnnouncements(prev => {
@@ -7769,6 +8792,142 @@ export default function App() {
                             onChange={(e) => setAdminAnnContent(e.target.value)}
                             className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right leading-relaxed"
                           />
+                        </div>
+
+                        {/* Media and Attachments section */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3.5 text-right font-sans">
+                          <span className="text-xs font-black text-slate-800 flex items-center gap-1 border-b border-slate-100 pb-2">
+                            <span>🖼️ ألبوم ترويج الميديا (المرفقات الصور والڤيديو)</span>
+                          </span>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-600 mb-1">نوع المرفق الإعلاني</label>
+                              <div className="flex gap-2">
+                                {(
+                                  [
+                                    { value: 'none', label: 'نص فقط', icon: 'Text' },
+                                    { value: 'image', label: 'صورة إعلانية', icon: 'Image' },
+                                    { value: 'video', label: 'فيديو ترويجي', icon: 'Film' }
+                                  ] as const
+                                ).map((opt) => (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    onClick={() => {
+                                      setAdminAnnMediaType(opt.value);
+                                      if (opt.value === 'none') {
+                                        setAdminAnnMediaUrl('');
+                                      }
+                                    }}
+                                    className={`flex-1 py-1.5 px-2 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                      adminAnnMediaType === opt.value
+                                        ? 'bg-amber-500/10 border-amber-500 text-amber-800 font-extrabold shadow-2xs'
+                                        : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+                                    }`}
+                                  >
+                                    {opt.value === 'image' && <Image className="w-3 h-3" />}
+                                    {opt.value === 'video' && <Film className="w-3 h-3" />}
+                                    <span>{opt.label}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {adminAnnMediaType !== 'none' && (
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-600 mb-1">تعليمات المرفقات الكبرى</label>
+                                <div className="text-[10px] text-slate-400 leading-snug mt-1">
+                                  بإمكانك رفع ملف مباشرة من جهازك (بحد أقصى 6MB للصور و15MB للفيديو) أو إدخال رابط خارجي مباشر.
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {adminAnnMediaType !== 'none' && (
+                            <div className="space-y-3 pt-1 border-t border-slate-100">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                {/* Option A: File Upload */}
+                                <div className="border border-dashed border-slate-300 rounded-xl p-3 bg-slate-50/50 flex flex-col items-center justify-center text-center relative group hover:bg-slate-50 transition-all min-h-24">
+                                  <input 
+                                    type="file" 
+                                    accept={adminAnnMediaType === 'image' ? 'image/*' : 'video/*'}
+                                    onChange={handleAnnMediaUpload}
+                                    className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                    disabled={adminAnnMediaFileUploading}
+                                  />
+                                  <div className="space-y-1">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center mx-auto group-hover:bg-amber-100 group-hover:text-amber-700 transition-all">
+                                      <Upload className="w-4 h-4" />
+                                    </div>
+                                    <div className="text-[10px] font-extrabold text-slate-750">
+                                      {adminAnnMediaFileUploading ? 'جاري قراءة ورفع الملف...' : `اسحب أو انقر لرفع ${adminAnnMediaType === 'image' ? 'صورة' : 'فيديو'}`}
+                                    </div>
+                                    <div className="text-[9px] text-slate-400">صيغ مدعومة: JPG, PNG, WEBP, MP4</div>
+                                  </div>
+
+                                  {adminAnnMediaFileUploading && (
+                                    <div className="absolute inset-0 bg-white/90 rounded-xl flex flex-col items-center justify-center p-3 animate-fade-in z-20">
+                                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden mb-1.5">
+                                        <div 
+                                          className="bg-amber-500 h-1 rounded-full transition-all duration-300" 
+                                          style={{ width: `${adminAnnMediaUploadProgress || 10}%` }}
+                                        />
+                                      </div>
+                                      <span className="text-[9px] font-bold text-slate-600 font-mono">
+                                        {adminAnnMediaUploadProgress || 10}%
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Option B: URL Input */}
+                                <div className="space-y-1.5 flex flex-col justify-center">
+                                  <label className="block text-[10px] font-bold text-slate-500">أو أدخل رابط ويب مباشر للوسائط (URL):</label>
+                                  <input 
+                                    type="url" 
+                                    placeholder={adminAnnMediaType === 'image' ? "https://example.com/banner.jpg" : "https://example.com/promo.mp4"}
+                                    value={adminAnnMediaUrl.startsWith('data:') ? '' : adminAnnMediaUrl}
+                                    onChange={(e) => setAdminAnnMediaUrl(e.target.value)}
+                                    className="w-full text-xs font-mono border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-left"
+                                  />
+                                  {adminAnnMediaUrl.startsWith('data:') && (
+                                    <div className="text-[9px] text-emerald-600 font-bold flex items-center gap-0.5">
+                                      <span>✓ تم إرفاق الملف المرفوع بنجاح (مخزن محلياً)</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Attachment Preview Box */}
+                              {adminAnnMediaUrl && (
+                                <div className="mt-2 p-2.5 bg-slate-90 border border-slate-150 rounded-xl flex items-center justify-between gap-3 text-right bg-slate-50">
+                                  <div className="flex items-center gap-2.5">
+                                    <div className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 bg-slate-105 flex items-center justify-center">
+                                      {adminAnnMediaType === 'image' ? (
+                                        <img src={adminAnnMediaUrl} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <video src={adminAnnMediaUrl} className="w-full h-full object-cover" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-[10px] font-black text-slate-800">العرض المسبق للمرفق</div>
+                                      <div className="text-[9px] text-slate-400 font-mono truncate max-w-[200px]">{adminAnnMediaUrl}</div>
+                                    </div>
+                                  </div>
+                                  
+                                  <button
+                                    type="button"
+                                    onClick={() => setAdminAnnMediaUrl('')}
+                                    className="p-1.5 hover:bg-rose-50 text-rose-600 rounded-lg transition-all border border-rose-150 flex items-center gap-1 text-[9px] font-bold cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>حذف المرفق</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-2 py-1 select-none">
@@ -7864,6 +9023,8 @@ export default function App() {
                                             setAdminAnnContent(a.content);
                                             setAdminAnnCategory(a.category);
                                             setAdminAnnIsPinned(!!a.isPinned);
+                                            setAdminAnnMediaType(a.mediaType || 'none');
+                                            setAdminAnnMediaUrl(a.mediaUrl || '');
                                           }}
                                           className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold transition-all border border-slate-200 cursor-pointer"
                                         >
@@ -7992,10 +9153,22 @@ export default function App() {
           setIsInvoiceOpen(false);
           setSelectedTx(null);
           setDirectPrintActive(false);
+          setInvoiceInitialPdfActive(false);
         }}
         transaction={selectedTx}
         lang={lang}
         triggerDirectPrint={directPrintActive}
+        initialPdfPreview={invoiceInitialPdfActive}
+      />
+
+      {/* Batch Print and PDF Merging Hub */}
+      <BatchPrintModal
+        isOpen={isBatchPrintOpen}
+        onClose={() => {
+          setIsBatchPrintOpen(false);
+        }}
+        selectedTransactions={transactions.filter(t => selectedBatchTxIds.includes(t.id))}
+        lang={lang}
       />
 
       {/* Checkout Online Payment dialogue */}

@@ -5,6 +5,7 @@ export interface Service {
   govFee: number; // State fee (الرسوم الحكومية)
   officeFee: number; // Office fee (أتعاب المكتب)
   category: string;
+  subCategory?: string; // Custom sub-category within existing service category
   icon: string; // Lucide icon name or indicator
   additionalFees?: { id: string; name: string; amount: number }[];
   baseCurrency?: 'SAR' | 'USD' | 'EUR';
@@ -54,6 +55,7 @@ export interface Transaction {
   date: string; // ISO format
   notes?: string;
   invoiceNumber: string; // e.g., INV-2026-001
+  paymentCurrency?: 'USD' | 'EUR' | 'SAR';
 }
 
 // Default dynamic services list based on user's requirements
@@ -65,6 +67,7 @@ export const DEFAULT_SERVICES: Service[] = [
     govFee: 2200,
     officeFee: 550,
     category: 'visa',
+    subCategory: 'visa-work',
     icon: 'Briefcase'
   },
   {
@@ -74,6 +77,7 @@ export const DEFAULT_SERVICES: Service[] = [
     govFee: 330,
     officeFee: 165,
     category: 'visa',
+    subCategory: 'visa-hajj',
     icon: 'Moon'
   },
   {
@@ -83,6 +87,7 @@ export const DEFAULT_SERVICES: Service[] = [
     govFee: 550,
     officeFee: 220,
     category: 'visa',
+    subCategory: 'visa-visit',
     icon: 'Users'
   },
   {
@@ -92,6 +97,7 @@ export const DEFAULT_SERVICES: Service[] = [
     govFee: 0,
     officeFee: 300,
     category: 'gov',
+    subCategory: 'gov-labor',
     icon: 'Building'
   },
   {
@@ -101,6 +107,7 @@ export const DEFAULT_SERVICES: Service[] = [
     govFee: 100,
     officeFee: 80,
     category: 'transport',
+    subCategory: 'transport-land',
     icon: 'Truck'
   },
   {
@@ -110,6 +117,7 @@ export const DEFAULT_SERVICES: Service[] = [
     govFee: 800,
     officeFee: 120,
     category: 'transport',
+    subCategory: 'transport-air',
     icon: 'Plane'
   }
 ];
@@ -125,7 +133,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     total: 2832.5,
     date: '2026-05-18T10:30:00Z',
     invoiceNumber: 'SM-2605-001',
-    notes: 'استقدام سائق خاص - جاهز للتسليم'
+    notes: 'استقدام سائق خاص - جاهز للتسليم',
+    paymentCurrency: 'USD'
   },
   {
     id: 'tx-2',
@@ -137,7 +146,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     total: 519.75,
     date: '2026-05-19T08:15:00Z',
     invoiceNumber: 'SM-2605-002',
-    notes: 'تأشيرة ذكية لعدد ٣ أفراد عائلة قطري'
+    notes: 'تأشيرة ذكية لعدد ٣ أفراد عائلة قطري',
+    paymentCurrency: 'EUR'
   },
   {
     id: 'tx-3',
@@ -219,6 +229,8 @@ export interface Announcement {
   date: string;
   category: 'alert' | 'offer' | 'news' | 'holiday';
   isPinned?: boolean;
+  mediaType?: 'none' | 'image' | 'video';
+  mediaUrl?: string;
 }
 
 export interface JobApplication {
@@ -299,7 +311,9 @@ export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
     content: 'يعلن مكتب سما المملكة عن تدشين قسم خدمة ضيوف الرحمن وفتح باب التسجيل المسبق للشركات والمجموعات الراغبة في حجز باقات تأشيرات وتصاريح الحج وتأشيرات العمل المؤقت للموسم القادم. يرجى التواصل مع إدارة العمليات لضمان أولوية التخصيص والمتابعة الإدارية الفورية.',
     date: '2026-05-25T09:00:00Z',
     category: 'offer',
-    isPinned: true
+    isPinned: true,
+    mediaType: 'image',
+    mediaUrl: 'https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&w=1000&q=80'
   },
   {
     id: 'ann-2',
@@ -307,7 +321,9 @@ export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
     content: 'يسرنا في مكتب سما المملكة أن نشارككم فخرنا واعتزازنا بالحصول على درع الموثوقية والتميز الرقمي لعام ٢٠٢٦ من الهيئة المانحة لجودة الخدمات العامة. ونعد عملائنا الكرام بمواصلة بذل أقصى الجهود والالتزام بتسريع دورات تسليم المعاملات والشفافية التامة.',
     date: '2026-05-29T11:30:00Z',
     category: 'news',
-    isPinned: false
+    isPinned: false,
+    mediaType: 'video',
+    mediaUrl: 'https://assets.mixkit.co/videos/preview/mixkit-network-of-connections-background-12850-large.mp4'
   },
   {
     id: 'ann-3',
@@ -315,7 +331,9 @@ export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
     content: 'نود إحاطة عملائنا الكرام ورجال الأعمال المتعاقدين معنا، بأن عطلة العيد ستبدأ إن شاء الله من يوم الأحد ٩ ذي الحجة وتستمر حتى نهاية يوم الأربعاء ١٢ ذي الحجة. على أن يستأنف العمل بشكل طبيعي وتلقي طلبات المتابعة الطارئة عبر الخط الساخن ومنصة المعاملات الإلكترونية الذكية على مدار الساعة.',
     date: '2026-05-31T14:00:00Z',
     category: 'holiday',
-    isPinned: false
+    isPinned: false,
+    mediaType: 'none',
+    mediaUrl: ''
   }
 ];
 

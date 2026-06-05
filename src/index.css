@@ -62,6 +62,10 @@
   animation: subtlePulseBlue 2.2s infinite ease-in-out;
 }
 
+#print-area {
+  border: 6px double #0f172a;
+}
+
 /* 
   =========================================
   PRINT STYLESHEET FOR PROFESSIONAL INVOICE 
@@ -87,7 +91,7 @@
     width: 100% !important;
     max-width: none !important;
     height: auto !important;
-    border: none !important;
+    border: 6px double #0f172a !important;
     box-shadow: none !important;
     margin: 0 !important;
     padding: 10mm !important;

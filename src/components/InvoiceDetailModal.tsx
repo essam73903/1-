@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Printer, Download, Receipt, Building, Calendar, User, FileText, CheckCircle2, Sparkles, MessageSquare, Send } from 'lucide-react';
+import { X, Printer, Download, Receipt, Building, Calendar, User, FileText, CheckCircle2, Sparkles, MessageSquare, Send, Eye } from 'lucide-react';
 import { Transaction } from '../types';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -405,9 +405,10 @@ interface InvoiceDetailModalProps {
   transaction: Transaction | null;
   lang?: 'ar' | 'en';
   triggerDirectPrint?: boolean;
+  initialPdfPreview?: boolean;
 }
 
-export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang = 'ar', triggerDirectPrint = false }: InvoiceDetailModalProps) {
+export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang = 'ar', triggerDirectPrint = false, initialPdfPreview = false }: InvoiceDetailModalProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [autoPrint, setAutoPrint] = useState(() => {
     return localStorage.getItem('sm_auto_print') === 'true';
@@ -429,6 +430,31 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang 
 
   // Country Selection for adaptive regional bank billing
   const [selectedCountryCode, setSelectedCountryCode] = useState('SA');
+
+  // Selected display currency for international clients (USD or EUR)
+  const [selectedDisplayCurrency, setSelectedDisplayCurrency] = useState<'USD' | 'EUR'>('USD');
+
+  // Synchronize display currency if the transaction specifies a paymentCurrency
+  React.useEffect(() => {
+    if (transaction?.paymentCurrency) {
+      if (transaction.paymentCurrency === 'EUR') {
+        setSelectedDisplayCurrency('EUR');
+      } else {
+        setSelectedDisplayCurrency('USD');
+      }
+    }
+  }, [transaction?.paymentCurrency]);
+
+  // Synchronize pdf preview state based on initialPdfPreview on open
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialPdfPreview) {
+        setShowPdfPreview(true);
+      } else {
+        setShowPdfPreview(false);
+      }
+    }
+  }, [isOpen, initialPdfPreview]);
 
   // Extract phone helper
   const getExtractedPhone = (): string => {
@@ -650,6 +676,127 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang 
     startPrintWithLoader();
   };
 
+  const handlePrintPreview = () => {
+    const element = document.getElementById('print-area');
+    if (!element) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert(lang === 'en' 
+        ? 'Popup blocker active! Please allow popups for this site to view the print preview.' 
+        : 'تم حظر النافذة المنبثقة! يرجى السماح بالنوافذ المنبثقة في متصفحك لاستعراض معاينة الطباعة.');
+      return;
+    }
+
+    // Determine background color based on settings
+    let paperBgStyle = 'background-color: #ffffff !important;';
+    if (showPdfPreview) {
+      if (paperColor === 'cream') paperBgStyle = 'background-color: #faf8f0 !important;';
+      else if (paperColor === 'cool-grey') paperBgStyle = 'background-color: #f4f5f7 !important;';
+    }
+
+    // Get all style tags and link stylesheet tags from main page
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(style => style.outerHTML)
+      .join('\n');
+
+    const direction = lang === 'en' ? 'ltr' : 'rtl';
+    const docTitle = lang === 'en' ? `Print Preview - Invoice ${transaction.invoiceNumber}` : `معاينة الطباعة - فاتورة رقم ${transaction.invoiceNumber}`;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html lang="${lang}" dir="${direction}">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>${docTitle}</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+          ${styles}
+          <style>
+            @media print {
+              .no-print {
+                display: none !important;
+              }
+              body {
+                background: white !important;
+                margin: 0 !important;
+                padding: 0 !important;
+              }
+              .preview-container {
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                max-width: 100% !important;
+                width: 100% !important;
+              }
+            }
+            body {
+              background-color: #0f172a;
+              color: #f8fafc;
+              font-family: "Tajawal", "Helvetica Neue", Helvetica, Arial, sans-serif;
+              margin: 0;
+              padding: 0;
+            }
+            .preview-container {
+              transition: all 0.2s ease-in-out;
+            }
+          </style>
+        </head>
+        <body class="bg-slate-900 text-slate-100 flex flex-col min-h-screen">
+          <!-- Non-printable top action bar -->
+          <div class="no-print bg-slate-950 border-b border-slate-800 px-6 py-4 flex items-center justify-between shadow-lg sticky top-0 z-50 select-none">
+            <div class="flex items-center gap-3">
+              <div class="p-2 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              </div>
+              <div>
+                <h1 class="text-xs md:text-sm font-black text-white leading-tight">
+                  \${lang === 'en' ? 'Professional Print Preview' : 'معاينة طباعة السند المالي الرسمي'}
+                </h1>
+                <p class="text-[10px] text-slate-400 font-mono mt-0.5" style="direction: ltr; text-align: left;">
+                  ID: \${transaction.invoiceNumber} • \${transaction.clientName}
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2.5">
+              <button 
+                onclick="window.print()" 
+                class="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 px-4 py-2 rounded-lg text-xs font-black transition-all cursor-pointer shadow-md"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14" rx="1"/><path d="M6 8V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4"/></svg>
+                <span>\${lang === 'en' ? 'Print' : 'إجراء الطباعة'}</span>
+              </button>
+
+              <button 
+                onclick="window.close()" 
+                class="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 hover:text-white px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer border border-slate-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                <span>\${lang === 'en' ? 'Close' : 'إغلاق المعاينة'}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Printable area wrapper -->
+          <div class="flex-1 flex justify-center items-center p-4 md:p-8 bg-slate-900 overflow-y-auto">
+            <div 
+              class="preview-container bg-white text-slate-900 rounded-xl border border-slate-950 shadow-2xl relative max-w-[210mm] w-full p-8 md:p-12"
+              style="min-h: 297mm; \${paperBgStyle}"
+            >
+              \${element.innerHTML}
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+  };
+
   const handleDownloadPDF = async () => {
     const element = document.getElementById('print-area');
     if (!element) return;
@@ -773,6 +920,14 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang 
             >
               <Download className={`w-4 h-4 ${isExporting ? 'animate-bounce' : ''}`} />
               <span>{isExporting ? (lang === 'en' ? 'Exporting...' : 'جاري التصدير...') : (lang === 'en' ? 'Export PDF' : 'تصدير PDF')}</span>
+            </button>
+            <button
+              onClick={handlePrintPreview}
+              className="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-amber-500 hover:text-amber-400 px-3 py-1.5 rounded text-sm font-bold transition-all cursor-pointer"
+              title={lang === 'en' ? 'Open in a new window for professional print preview' : 'فتح في نافذة متصفح جديدة لمعاينة الطباعة الاحترافية'}
+            >
+              <Eye className="w-4 h-4" />
+              <span>{lang === 'en' ? 'Print Preview' : 'معاينة الطباعة'}</span>
             </button>
             <button
               onClick={handlePrint}
@@ -1230,10 +1385,61 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang 
                 <span>الرسوم والمصاريف الحكومية المستحقة والمسددة:</span>
                 <span>{transaction.govFee.toFixed(2)} ر.س</span>
               </div>
-              <div className="flex justify-between font-black text-lg text-slate-950 border-t-2 border-slate-900 pt-2 bg-amber-50 p-2 rounded">
-                <span className="font-sans">الإجمالي النهائي المستحق:</span>
-                <span>{transaction.total.toFixed(2)} ر.س</span>
+
+              {transaction.paymentCurrency && (
+                <div className="flex items-center justify-between text-[11px] font-sans print:hidden py-1.5 border-b border-t border-dashed border-slate-200 mt-1 select-none">
+                  <span className="text-slate-500 font-bold">عملة العرض الدولي:</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDisplayCurrency('USD')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black transition-all cursor-pointer ${
+                        selectedDisplayCurrency === 'USD'
+                          ? 'bg-amber-500 text-slate-950 border border-amber-600'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                      }`}
+                    >
+                      USD ($)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDisplayCurrency('EUR')}
+                      className={`px-2 py-0.5 rounded text-[10px] font-black transition-all cursor-pointer ${
+                        selectedDisplayCurrency === 'EUR'
+                          ? 'bg-amber-500 text-slate-950 border border-amber-600'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                      }`}
+                    >
+                      EUR (€)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1 border-t-2 border-slate-900 pt-2 bg-amber-50 p-2.5 rounded">
+                <div className="flex justify-between font-black text-slate-950 text-sm md:text-base">
+                  <span className="font-sans">الإجمالي النهائي المستحق:</span>
+                  <span>{transaction.total.toFixed(2)} ر.س</span>
+                </div>
+                
+                {transaction.paymentCurrency && (
+                  <div className="flex justify-between items-center border-t border-amber-200/50 pt-1.5 mt-1 text-emerald-900 font-bold text-xs md:text-sm animate-fade-in font-sans">
+                    <span className="flex items-center gap-1">
+                      <span>إجمالي سداد ({selectedDisplayCurrency === 'USD' ? 'دولار أمريكي' : 'يورو أوروبي'}):</span>
+                    </span>
+                    <span className="font-mono text-sm md:text-[15px] font-black">
+                      {(transaction.total * (selectedDisplayCurrency === 'USD' ? 0.266 : 0.245)).toFixed(2)} {selectedDisplayCurrency === 'USD' ? 'USD $' : 'EUR €'}
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {transaction.paymentCurrency && (
+                <div className="text-[9.5px] text-slate-400 font-sans text-left mt-1 select-none flex justify-between px-1">
+                  <span>* سعر الصرف ومكافئ التحويل الدولي:</span>
+                  <span className="font-mono font-bold">1 SAR = {selectedDisplayCurrency === 'USD' ? '0.266 USD' : '0.245 EUR'}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1359,6 +1565,16 @@ export default function InvoiceDetailModal({ isOpen, onClose, transaction, lang 
           >
             <Printer className="w-4 h-4" />
             <span>{lang === 'en' ? 'Print Professional Layout' : 'طباعة مستند الفاتورة'}</span>
+          </button>
+          <button
+            id="print-preview-footer-btn"
+            type="button"
+            onClick={handlePrintPreview}
+            className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 border border-slate-350 text-amber-500 hover:text-amber-400 px-5 py-2 rounded-lg font-bold text-sm shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+            title={lang === 'en' ? 'Open inside browser new window for proofreading' : 'فتح معاينة مستقلة في نافذة جديدة قبل الطباعة'}
+          >
+            <Eye className="w-4 h-4" />
+            <span>{lang === 'en' ? 'Print Preview' : 'معاينة الطباعة'}</span>
           </button>
           <button
             id="whatsapp-share-footer-btn"

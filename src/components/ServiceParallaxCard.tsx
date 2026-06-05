@@ -70,6 +70,35 @@ export default function ServiceParallaxCard({ service, onSelect, onDetails, rend
     return DEFAULT_CATEGORIES;
   });
 
+  const [subCategories] = useState<{ id: string; parentId: string; nameAr: string }[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sm_service_subcategories');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+    return [
+      { id: 'visa-work', parentId: 'visa', nameAr: 'تأشيرات العمل والاستقدام' },
+      { id: 'visa-hajj', parentId: 'visa', nameAr: 'الحج والعمرة والزيارة الدينية' },
+      { id: 'visa-visit', parentId: 'visa', nameAr: 'الزيارات العائلية والشخصية' },
+      { id: 'gov-labor', parentId: 'gov', nameAr: 'وزارة الموارد البشرية والعمل' },
+      { id: 'gov-jawazat', parentId: 'gov', nameAr: 'الجوازات والإقامة والرحلات' },
+      { id: 'gov-municipality', parentId: 'gov', nameAr: 'خدمات البلدية والدفاع المدني' },
+      { id: 'transport-land', parentId: 'transport', nameAr: 'شحن ونقل بري ولوجستيات' },
+      { id: 'transport-air', parentId: 'transport', nameAr: 'حجز ومتابعة تذاكر وشحن جوي' }
+    ];
+  });
+
+  const getSubCategoryName = (subCatId?: string) => {
+    if (!subCatId) return '';
+    const sub = subCategories.find(sc => sc.id === subCatId);
+    return sub ? sub.nameAr : '';
+  };
+
   const getServiceDisplayName = (srv: Service) => {
     if (lang === 'en') {
       if (srv.id === 'srv-1') return 'Work Visa';
@@ -204,12 +233,19 @@ export default function ServiceParallaxCard({ service, onSelect, onDetails, rend
         <div className="absolute inset-0 bg-gradient-to-r from-slate-950/20 to-transparent z-10" />
 
         {/* Categories Badges overlaid elegantly */}
-        <span className="absolute top-4 right-4 z-20 text-[10px] font-black tracking-wider bg-slate-900/60 text-amber-400 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 uppercase font-sans flex items-center gap-1">
-          <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
-          <span>
-            {getCategoryName(service.category)}
+        <div className="absolute top-4 right-4 z-20 flex flex-wrap gap-1.5 justify-start">
+          <span className="text-[10px] font-black tracking-wider bg-slate-900/60 text-amber-400 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 uppercase font-sans flex items-center gap-1 select-none">
+            <Sparkles className="w-3 h-3 text-amber-500 animate-pulse" />
+            <span>
+              {getCategoryName(service.category)}
+            </span>
           </span>
-        </span>
+          {service.subCategory && getSubCategoryName(service.subCategory) && (
+            <span className="text-[9px] font-black bg-slate-900/40 text-slate-100 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 font-sans shadow-3xs select-none">
+              {getSubCategoryName(service.subCategory)}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Elevated Icon Sphere overlaying the seam */}
