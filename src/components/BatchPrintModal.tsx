@@ -161,6 +161,109 @@ export default function BatchPrintModal({ isOpen, onClose, selectedTransactions,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto animate-fade-in" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+      {/* Dynamic responsive & print overrides */}
+      <style>{`
+        @media (max-width: 640px) {
+          #batch-pdf-scale-container {
+            width: 100% !important;
+            max-width: 100vw !important;
+            transform: none !important;
+            margin-bottom: 0px !important;
+          }
+          #print-area {
+            width: 105% !important;
+            max-width: 100% !important;
+            min-height: auto !important;
+            padding: 12px !important;
+            margin: 0 auto !important;
+          }
+          .batch-print-page {
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: auto !important;
+            padding: 16px !important;
+            margin-bottom: 12px !important;
+            box-shadow: none !important;
+          }
+          #print-area h1 {
+            font-size: 15px !important;
+            line-height: 1.2 !important;
+          }
+          #print-area h2 {
+            font-size: 13px !important;
+            line-height: 1.2 !important;
+          }
+          #print-area h3 {
+            font-size: 12px !important;
+            line-height: 1.1 !important;
+          }
+          #print-area p, #print-area span, #print-area td, #print-area th, #print-area div {
+            font-size: 10px !important;
+            line-height: 1.3 !important;
+          }
+          #print-area table {
+            width: 100% !important;
+          }
+          /* Hide boundary indicators on mobile */
+          .absolute.left-0.right-0.border-t-2 {
+            display: none !important;
+          }
+          /* Adjust layout for signature stamp columns to preserve spacing on mobile */
+          .grid-cols-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 12px !important;
+          }
+        }
+
+        @keyframes batchGoldPulse {
+          0%, 100% {
+            border-color: #ca9f4a !important;
+            box-shadow: 0 0 35px 6px rgba(245, 158, 11, 0.16), 0 15px 50px -15px rgba(0, 0, 0, 0.6) !important;
+          }
+          50% {
+            border-color: #f59e0b !important;
+            box-shadow: 0 0 45px 12px rgba(245, 158, 11, 0.28), 0 18px 55px -10px rgba(0, 0, 0, 0.7) !important;
+          }
+        }
+
+        /* Ambient subtle glowing shadow around invoice to elevate design and distinguish from background */
+        @media screen {
+          #print-area {
+            border: 1.5px solid #ca9f4a !important;
+            border-radius: 16px !important;
+            transition: all 0.3s ease-in-out;
+            animation: batchGoldPulse 3s infinite ease-in-out !important;
+          }
+          #print-area:hover {
+            box-shadow: 0 0 45px 10px rgba(245, 158, 11, 0.22), 0 20px 60px -12px rgba(0, 0, 0, 0.75) !important;
+            border-color: #d4af37 !important;
+            animation: none !important;
+          }
+        }
+
+        /* High-fidelity layout preservation for actual printer units */
+        @media print {
+          body, html {
+            background-color: #ffffff !important;
+          }
+          #print-area {
+            box-shadow: none !important;
+            border: none !important;
+            animation: none !important;
+            width: 210mm !important;
+            max-width: 210mm !important;
+            min-height: 297mm !important;
+          }
+          .batch-print-page {
+            page-break-after: always !important;
+            break-after: page !important;
+            min-height: 297mm !important;
+            box-sizing: border-box !important;
+            box-shadow: none !important;
+          }
+        }
+      `}</style>
+
       <div className="w-full max-w-5xl bg-white border border-slate-900 rounded-xl shadow-2xl overflow-hidden my-8 flex flex-col max-h-[90vh]">
         
         {/* TOP COMPREHENSIVE ACTION CONTROL BAR */}

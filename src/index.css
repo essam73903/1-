@@ -62,8 +62,28 @@
   animation: subtlePulseBlue 2.2s infinite ease-in-out;
 }
 
+@keyframes invoiceGoldPulse {
+  0%, 100% {
+    border-color: #ca9f4a;
+    box-shadow: 0 20px 50px -12px rgba(217, 119, 6, 0.15), 0 0 25px 2px rgba(217, 119, 6, 0.08), 0 8px 16px -6px rgba(0, 0, 0, 0.3) !important;
+  }
+  50% {
+    border-color: #f59e0b;
+    box-shadow: 0 20px 50px -8px rgba(217, 119, 6, 0.25), 0 0 32px 6px rgba(217, 119, 6, 0.18), 0 8px 16px -4px rgba(0, 0, 0, 0.45) !important;
+  }
+}
+
 #print-area {
-  border: 6px double #0f172a;
+  border: 1.5px solid #ca9f4a;
+  border-radius: 16px !important;
+  box-shadow: 0 20px 50px -12px rgba(217, 119, 6, 0.15), 0 0 25px 2px rgba(217, 119, 6, 0.08), 0 8px 16px -6px rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.3s ease;
+  animation: invoiceGoldPulse 3s infinite ease-in-out;
+}
+
+#print-area:hover {
+  border-color: #d4af37 !important;
+  box-shadow: 0 25px 60px -10px rgba(217, 119, 6, 0.22), 0 0 30px 4px rgba(217, 119, 6, 0.12), 0 10px 20px -5px rgba(0, 0, 0, 0.35) !important;
 }
 
 /* Compact typography overrides specifically within #print-area on mobile screens to prevent text layout overflow */
@@ -107,8 +127,10 @@
     width: 100% !important;
     max-width: none !important;
     height: auto !important;
-    border: 6px double #0f172a !important;
+    border: 1.5px solid #ca9f4a !important;
+    border-radius: 16px !important;
     box-shadow: none !important;
+    animation: none !important;
     margin: 0 !important;
     padding: 10mm !important;
     box-sizing: border-box !important;

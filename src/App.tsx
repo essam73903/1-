@@ -1697,8 +1697,8 @@ export default function App() {
       // 3. Match normalized Invoice code from transactions lookup
       // Find corresponding transactions matching this phone number OR name
       const matchingTxs = transactions.filter(t => 
-        (t.clientName.trim().toLowerCase() === b.clientName.trim().toLowerCase() && 
-         t.serviceName.trim().toLowerCase() === b.serviceName.trim().toLowerCase())
+        t.clientName.trim().toLowerCase() === b.clientName.trim().toLowerCase() && 
+        t.serviceName.trim().toLowerCase() === b.serviceName.trim().toLowerCase()
       );
       
       const hasMatchingInvoice = matchingTxs.some(t => {
@@ -1915,265 +1915,108 @@ export default function App() {
       if (template) {
         const formattedMessage = template
           .replace(/{name}/g, targetBooking.clientName)
-          .replace(/{clientName}/g, targetBooking.clientName)
           .replace(/{service}/g, targetBooking.serviceName)
-          .replace(/{serviceName}/g, targetBooking.serviceName)
-          .replace(/{status}/g, statusAr)
-          .replace(/{phone}/g, targetBooking.phoneNumber)
-          .replace(/{bookingId}/g, bookingId);
+          .replace(/{id}/g, targetBooking.id)
+          .replace(/{status}/g, statusAr);
 
-        // Trigger temporary visual notification feedback
-        setWaToast({
-          show: true,
-          type: 'loading',
-          message: `جاري إرسال إشعار WhatsApp تلقائي إلى ${targetBooking.clientName}...`,
-          details: formattedMessage
-        });
-
-      // Call API
-      const result = await sendPlaceholderWhatsAppAPI(targetBooking.phoneNumber, formattedMessage);
-
-      // Create Transmission Log
-      const newLog: WhatsAppLog = {
-        id: `wa-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        bookingId: bookingId,
-        clientName: targetBooking.clientName,
-        phoneNumber: targetBooking.phoneNumber,
-        serviceName: targetBooking.serviceName,
-        status: status,
-        message: formattedMessage,
-        sentAt: new Date().toISOString(),
-        success: result.success,
-        apiResponse: result.apiResponse
-      };
-
-      setWhatsappLogs(prev => [newLog, ...prev]);
-
-      if (result.success) {
-        setWaToast({
-          show: true,
-          type: 'success',
-          message: `تم إرسال إشعار WhatsApp تلقائي بالنجاح للأخ ${targetBooking.clientName}!`,
-          details: formattedMessage
-        });
-      } else {
-        setWaToast({
-          show: true,
-          type: 'error',
-          message: `تعذر إرسال الإشعار للعميل: ${result.apiResponse}`,
-          details: formattedMessage
-        });
-      }
-
-      // Automatically auto-close feedback toast in 7 seconds
-      setTimeout(() => {
-        setWaToast(prev => {
-          if (prev && (prev.message.includes(targetBooking.clientName) || prev.type === 'error')) {
-            return { ...prev, show: false };
-          }
-          return prev;
-        });
-      }, 7000);
-      }
-    }
-  };
-
-  // Manual Trigger for WhatsApp Dynamic Testing Console
-  const handleManualTestWaDispatch = async () => {
-    const target = bookings.find(b => b.id === testConsoleBookingId);
-    if (!target) {
-      alert('يرجى تحديد معاملة نشطة من القائمة المنسدلة أولاً.');
-      return;
-    }
-
-    setTestConsoleIsDispatching(true);
-
-    let template = '';
-    let statusAr = '';
-    if (testConsoleTemplateType === 'completed') {
-      template = whatsappTemplateCompleted;
-      statusAr = 'مكتملة ومستحقة الدفع';
-    } else if (testConsoleTemplateType === 'cancelled') {
-      template = whatsappTemplateCancelled;
-      statusAr = 'ملغية ومسحوبة';
-    } else if (testConsoleTemplateType === 'processing') {
-      template = whatsappTemplateProcessing;
-      statusAr = 'تحت المعالجة الإجرائية من قبل فريق المراجعين';
-    } else if (testConsoleTemplateType === 'pending') {
-      template = whatsappTemplatePending;
-      statusAr = 'قيد المراجعة والتدقيق الإداري والمحاسبي';
-    }
-
-    const formattedMessage = template
-      .replace(/{name}/g, target.clientName)
-      .replace(/{clientName}/g, target.clientName)
-      .replace(/{service}/g, target.serviceName)
-      .replace(/{serviceName}/g, target.serviceName)
-      .replace(/{status}/g, statusAr)
-      .replace(/{phone}/g, target.phoneNumber)
-      .replace(/{bookingId}/g, target.id);
-
-    const result = await sendPlaceholderWhatsAppAPI(target.phoneNumber, formattedMessage);
-
-    const newLog: WhatsAppLog = {
-      id: `wa-log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-      bookingId: target.id,
-      clientName: target.clientName,
-      phoneNumber: target.phoneNumber,
-      serviceName: target.serviceName,
-      status: testConsoleTemplateType,
-      message: formattedMessage,
-      sentAt: new Date().toISOString(),
-      success: result.success,
-      apiResponse: result.apiResponse
-    };
-
-    setWhatsappLogs(prev => [newLog, ...prev]);
-    setTestConsoleIsDispatching(false);
-
-    setWaToast({
-      show: true,
-      type: result.success ? 'success' : 'error',
-      message: result.success 
-        ? `[إرسال تجريبي] تم بث رسالة WhatsApp تلقائية بنجاح للمستفيد ${target.clientName}!`
-        : `[فشل تجريبي] تعذر بث الإشعار للعميل: ${result.apiResponse}`,
-      details: formattedMessage
-    });
-
-    setTimeout(() => {
-      setWaToast(prev => {
-        if (prev && prev.message.includes('[إرسال تجريبي]')) {
-          return { ...prev, show: false };
+        try {
+          const encodedText = encodeURIComponent(formattedMessage);
+          const sanitizedPhone = targetBooking.phoneNumber.replace(/\+/g, '').replace(/\s+/g, '');
+          const cleanPhone = sanitizedPhone.startsWith('05') 
+            ? '966' + sanitizedPhone.slice(1) 
+            : (sanitizedPhone.startsWith('5') ? '966' + sanitizedPhone : sanitizedPhone);
+          
+          const waUrl = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodedText}`;
+          window.open(waUrl, '_blank');
+        } catch (e) {
+          console.error("WhatsApp dispatcher error: ", e);
         }
-        return prev;
-      });
-    }, 7000);
+      }
+    }
   };
 
-  // Link booking directly to a service in the service directory
+  const handleTabClick = (tab: 'home' | 'track' | 'jobs' | 'admin') => {
+    setActiveTab(tab);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleUpdateBookingService = (bookingId: string, serviceId: string) => {
-    const srv = services.find(s => s.id === serviceId);
-    if (!srv) return;
-    const updated = bookings.map(b => {
+    const matched = services.find(s => s.id === serviceId);
+    if (!matched) return;
+    setBookings(prev => prev.map(b => {
       if (b.id === bookingId) {
-        return { ...b, serviceId: serviceId, serviceName: srv.name };
+        return { ...b, serviceId: serviceId, serviceName: matched.name };
       }
       return b;
-    });
-    setBookings(updated);
+    }));
+    alert('تم تعديل وربط الخدمة بالطلب بنجاح!');
   };
 
-  // Delete transaction safely
-  const handleDeleteTransaction = (txId: string) => {
-    if (window.confirm('هل أنت متأكد من رغبتك في حذف هذا القيد المالي بشكل نهائي؟')) {
-      const filtered = transactions.filter(t => t.id !== txId);
-      setTransactions(filtered);
-    }
-  };
-
-  // Export all transaction records to a CSV file
   const handleExportTransactionsToCSV = () => {
     if (transactions.length === 0) {
-      alert(lang === 'en' ? 'No transactions to export.' : 'لا توجد عمليات لتصديرها.');
+      alert('لا توجد قيود مالية لتصديرها حالياً.');
       return;
     }
-
-    const headers = lang === 'en' ? [
-      'Invoice Number',
-      'Client Name',
-      'Service Name',
-      'Gov Fee (SAR)',
-      'Office Fee (SAR)',
-      'Vat 15% (SAR)',
-      'Total Amount (SAR)',
-      'Date of Entry',
-      'Notes'
-    ] : [
-      'رقم الفاتورة',
-      'اسم العميل',
-      'إجراء الخدمة',
-      'رسوم الدولة (ر.س)',
-      'أتعاب المكتب (ر.س)',
-      'الضريبة المضافة 15% (ر.س)',
-      'المجموع الشامل (ر.س)',
-      'تاريخ وقت القيد',
-      'ملاحظات السند'
-    ];
-
-    const escapeCSVValue = (value: any) => {
-      if (value === undefined || value === null) return '';
-      let str = String(value);
-      // Escape internal double quotes by doubling them
-      str = str.replace(/"/g, '""');
-      // Wrap in double quotes if it contains separator, quote or newline
-      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-        str = `"${str}"`;
-      }
-      return str;
-    };
-
-    const csvRows: string[] = [];
-    csvRows.push(headers.join(','));
-
-    for (const t of transactions) {
-      const formattedDate = new Date(t.date).toLocaleDateString(lang === 'en' ? 'en-US' : 'ar-SA') + ' ' + 
-        new Date(t.date).toLocaleTimeString(lang === 'en' ? 'en-US' : 'ar-SA', { hour: '2-digit', minute: '2-digit' });
-      
-      const row = [
-        escapeCSVValue(t.invoiceNumber),
-        escapeCSVValue(t.clientName),
-        escapeCSVValue(t.serviceName),
-        escapeCSVValue(t.govFee.toFixed(2)),
-        escapeCSVValue(t.officeFee.toFixed(2)),
-        escapeCSVValue(t.tax.toFixed(2)),
-        escapeCSVValue(t.total.toFixed(2)),
-        escapeCSVValue(formattedDate),
-        escapeCSVValue(t.notes || '')
-      ];
-      csvRows.push(row.join(','));
-    }
-
-    // UTF-8 BOM to display Arabic characters correctly in Excel
-    const csvContent = '\uFEFF' + csvRows.join('\n');
+    const headers = ['رقم الفاتورة والقيد المالي', 'العميل', 'الخدمة الأساسية', 'الرسوم الحكومية ر.س', 'أتعاب المكتب ر.س', 'ضريبة القيمة المضافة ر.س', 'المجموع ر.س', 'التاريخ', 'ملاحظات المعاملة'];
+    const rows = transactions.map(t => [
+      t.invoiceNumber,
+      t.clientName,
+      t.serviceName,
+      t.govFee,
+      t.officeFee,
+      t.tax,
+      t.total,
+      t.date ? new Date(t.date).toLocaleDateString('ar-SA') : '',
+      t.notes || ''
+    ]);
+    
+    let csvContent = "\ufeff"; // BOM for Excel Arabic layout
+    csvContent += [headers.join(','), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))].join('\n');
+    
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = lang === 'en' ? `Sama_AlMamlakah_Ledger_${new Date().toISOString().split('T')[0]}.csv` : `قيود_مكتب_سما_المملكة_${new Date().toISOString().split('T')[0]}.csv`;
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `تقرير_الفواتير_والقيود_المالية_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
     link.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(link);
   };
 
-  // Delete Service safely
-  const handleDeleteService = (srvId: string) => {
-    const srv = services.find(s => s.id === srvId);
-    if (!srv) return;
-    
-    if (services.length <= 1) {
-      setShowCannotDeleteAlert(true);
-      return;
+  const handleDeleteTransaction = (id: string) => {
+    if (confirm('هل أنت متأكد من رغبتك في حذف هذا القيد المالي نهائياً؟')) {
+      setTransactions(prev => prev.filter(t => t.id !== id));
     }
-    setServiceToDeleteCheck(srv);
+  };
+
+  const handleDeleteService = (id: string) => {
+    const matched = services.find(s => s.id === id);
+    if (matched) {
+      setServiceToDeleteCheck(matched);
+    }
   };
 
   const confirmDeleteService = () => {
-    if (serviceToDeleteCheck) {
-      const filtered = services.filter(s => s.id !== serviceToDeleteCheck.id);
-      setServices(filtered);
-      setServiceToDeleteCheck(null);
-    }
+    if (!serviceToDeleteCheck) return;
+    setServices(prev => prev.filter(s => s.id !== serviceToDeleteCheck.id));
+    setServiceToDeleteCheck(null);
+    alert('تم حذف وتطهير بند الخدمة بنجاح من دليل المكتب!');
   };
 
-  // Handling navigation tabs
-  const handleTabClick = (tab: 'home' | 'track' | 'jobs' | 'admin') => {
-    if (tab === 'admin') {
-      if (isAdminAuthenticated) {
-        setActiveTab('admin');
-      } else {
-        setShowPasscode(true);
-      }
-    } else {
-      setActiveTab(tab);
+  const handleManualTestWaDispatch = async () => {
+    if (!testConsoleBookingId) return;
+    setTestConsoleIsDispatching(true);
+    
+    // Simple mock network delay
+    await new Promise(resolve => setTimeout(resolve, 700));
+    
+    try {
+      await handleUpdateBookingStatus(testConsoleBookingId, testConsoleTemplateType as any);
+      alert('تم إرسال تجربة البث والمحاكاة لرسالة الواتساب للعميل بنجاح!');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTestConsoleIsDispatching(false);
     }
   };
 
@@ -2234,13 +2077,13 @@ export default function App() {
     >
       
       {/* Top Main Nav */}
-      <nav className="bg-slate-900 border-b border-slate-950 text-white shadow-lg sticky top-0 z-40">
+      <nav className="bg-gradient-to-r from-[#01351C] via-[#02522E] to-[#012E19] border-b-2 border-amber-500/30 text-white shadow-xl sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             
             {/* Logo brand */}
-            <div className="flex items-center gap-3">
-              <div className="relative w-10 h-10 rounded-xl overflow-hidden border border-amber-500/30 flex-shrink-0 bg-slate-950 shadow-md">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden border-2 border-amber-400 flex-shrink-0 bg-slate-950 shadow-md">
                 <img 
                   src={samaLogoImg} 
                   alt={t('appName')} 
@@ -2248,17 +2091,21 @@ export default function App() {
                   referrerPolicy="no-referrer"
                 />
               </div>
-              <div className="flex flex-col">
-                <span className="font-extrabold text-base sm:text-xl tracking-tight text-amber-500 leading-tight">{t('appName')}</span>
-                <span className="hidden xs:inline-block text-[9px] sm:text-[10px] text-slate-400 font-medium">{t('appSubtitle')}</span>
+              <div className="flex flex-col justify-center">
+                <span className="font-extrabold text-sm xs:text-base sm:text-lg md:text-xl tracking-tight text-amber-400 leading-none whitespace-nowrap drop-shadow-sm">{t('appName')}</span>
+                <span className="hidden xs:inline-block text-[8px] sm:text-[10px] text-white/70 font-medium mt-1 leading-none select-none">{t('appSubtitle')}</span>
               </div>
             </div>
 
-            {/* Nav tabs desktop (Hidden on mobile/tablet, shown on large screens) */}
-            <div className="hidden lg:flex items-center gap-2 sm:gap-3 xl:gap-4">
+            {/* Nav tabs desktop */}
+            <div className="hidden xl:flex items-center gap-2 sm:gap-3 xl:gap-4 font-sans font-bold">
               <button 
                 onClick={() => handleTabClick('home')}
-                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'home' ? 'bg-amber-600 text-slate-950 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                className={`px-3 py-2 text-sm rounded transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'home' 
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-[#01351C] shadow-md font-extrabold' 
+                    : 'text-emerald-50 hover:text-white hover:bg-emerald-800/40'
+                }`}
               >
                 <Home className="w-4 h-4" />
                 <span>{t('home')}</span>
@@ -2266,7 +2113,11 @@ export default function App() {
 
               <button 
                 onClick={() => handleTabClick('track')}
-                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'track' ? 'bg-amber-600 text-slate-950 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                className={`px-3 py-2 text-sm rounded transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'track' 
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-[#01351C] shadow-md font-extrabold' 
+                    : 'text-emerald-50 hover:text-white hover:bg-emerald-800/40'
+                }`}
               >
                 <Search className="w-4 h-4" />
                 <span>{t('track')}</span>
@@ -2274,7 +2125,11 @@ export default function App() {
 
               <button 
                 onClick={() => handleTabClick('jobs')}
-                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'jobs' ? 'bg-amber-600 text-slate-950 shadow-md' : 'text-slate-300 hover:text-white hover:bg-slate-800'}`}
+                className={`px-3 py-2 text-sm rounded transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'jobs' 
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-[#01351C] shadow-md font-extrabold' 
+                    : 'text-emerald-50 hover:text-white hover:bg-emerald-800/40'
+                }`}
               >
                 <Briefcase className="w-4 h-4" />
                 <span>{lang === 'ar' ? 'الوظائف والإعلانات' : 'Jobs & Careers'}</span>
@@ -2282,7 +2137,11 @@ export default function App() {
 
               <button 
                 onClick={() => handleTabClick('admin')}
-                className={`px-3 py-2 text-sm font-bold rounded transition-all flex items-center gap-1.5 ${activeTab === 'admin' ? 'bg-slate-200 text-slate-950 shadow-md' : 'bg-slate-800 border border-slate-700 text-amber-500 hover:bg-slate-700'}`}
+                className={`px-3 py-2 text-sm rounded transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'admin' 
+                    ? 'bg-emerald-50 text-[#01351C] shadow-md font-extrabold' 
+                    : 'bg-[#014122] border border-amber-500/20 text-amber-450 hover:bg-emerald-800'
+                }`}
               >
                 <Lock className="w-4 h-4" />
                 <span>{t('adminPanel')}</span>
@@ -2291,17 +2150,17 @@ export default function App() {
               {/* News and MHRSD updates summary opener */}
               <button 
                 onClick={() => setIsNewsModalOpen(true)}
-                className="px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 bg-amber-950/45 text-amber-400 hover:text-white hover:bg-amber-900 border border-amber-500/30 cursor-pointer shadow-sm select-none"
+                className="px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 bg-[#01301A] text-amber-400 hover:text-white hover:bg-emerald-850 border border-amber-500/30 cursor-pointer shadow-sm select-none"
                 title={lang === 'ar' ? 'موجز قرارات وزارة الموارد البشرية ومنصتي قوى ومساند' : 'MHRSD, Qiwa, and Musaned Decisions Summary'}
               >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <Sparkles className="w-3.5 h-3.5 text-amber-450 animate-pulse" />
                 <span>{lang === 'ar' ? 'موجز القرارات 2026' : 'MHRSD Summary'}</span>
               </button>
 
               {/* Bilingual Language Switcher Toggle */}
               <button 
                 onClick={toggleLanguage}
-                className="px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1 bg-slate-800 text-amber-400 hover:text-white hover:bg-slate-700 border border-amber-500/20 hover:border-amber-500/50 cursor-pointer shadow-sm select-none"
+                className="px-3 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1 bg-[#01301A] text-amber-400 hover:text-white hover:bg-[#024E2B] border border-amber-500/20 hover:border-amber-500/50 cursor-pointer shadow-sm select-none"
                 title={lang === 'ar' ? 'Switch to English' : 'التحويل إلى اللغة العربية'}
               >
                 <Globe className="w-3.5 h-3.5 text-amber-500" />
@@ -2312,19 +2171,19 @@ export default function App() {
                 <button 
                   onClick={handleAdminLogout}
                   title="تسجيل الخروج من الإدارة"
-                  className="p-1.5 bg-red-900/40 text-red-300 hover:text-white rounded border border-red-800/60 hover:bg-red-900 transition-colors"
+                  className="p-1.5 bg-red-950/40 text-red-300 hover:text-white rounded border border-red-800/60 hover:bg-red-900 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
               )}
             </div>
 
-            {/* Mobile Header elements (language selector & hamburger icon) */}
-            <div className="flex lg:hidden items-center gap-2">
+            {/* Mobile Header elements (language selector & hamburger icon - shown under xl width) */}
+            <div className="flex xl:hidden items-center gap-2 select-none">
               {/* Language Switcher on mobile header directly for easy accessibility */}
               <button 
                 onClick={toggleLanguage}
-                className="px-2.5 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1 bg-slate-800 text-amber-400 hover:text-white border border-amber-500/20 hover:border-amber-500/50 cursor-pointer shadow-sm select-none"
+                className="px-2.5 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1 bg-[#01301A] text-amber-400 hover:text-white border border-amber-500/30 cursor-pointer shadow-sm select-none"
                 title={lang === 'ar' ? 'Switch to English' : 'التحويل إلى اللغة العربية'}
               >
                 <Globe className="w-3.5 h-3.5 text-amber-500" />
@@ -2333,13 +2192,13 @@ export default function App() {
 
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="inline-flex items-center justify-center p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 focus:outline-none transition-colors border border-slate-800 cursor-pointer"
+                className="inline-flex items-center justify-center p-2 rounded-lg text-[#9AE2BB] hover:text-white hover:bg-emerald-950 focus:outline-none transition-colors border border-emerald-800/40 cursor-pointer"
                 aria-label="Toggle Menu"
               >
                 {isMobileMenuOpen ? (
-                  <X className="block h-5.5 w-5.5 text-amber-500" />
+                  <X className="block h-5.5 w-5.5 text-amber-450" />
                 ) : (
-                  <Menu className="block h-5.5 w-5.5 text-slate-300" />
+                  <Menu className="block h-5.5 w-5.5 text-emerald-100" />
                 )}
               </button>
             </div>
@@ -2349,7 +2208,7 @@ export default function App() {
 
         {/* Mobile slide-down menu drawer */}
         {isMobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-950 bg-slate-900 px-4 py-3.5 pb-5 space-y-3 animate-fade-in shadow-2xl relative z-40 select-none">
+          <div className="xl:hidden border-t border-amber-500/20 bg-[#01351C] px-4 py-3.5 pb-5 space-y-3 animate-fade-in shadow-2xl relative z-40 select-none">
             <div className="grid grid-cols-2 gap-2">
               <button 
                 onClick={() => {
@@ -2358,8 +2217,8 @@ export default function App() {
                 }}
                 className={`w-full px-3 py-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'home' 
-                    ? 'bg-amber-600 text-slate-950 shadow-md font-black' 
-                    : 'text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750'
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-[#01351C] shadow-md font-black' 
+                    : 'text-emerald-50 hover:text-white bg-emerald-950 hover:bg-emerald-900 border border-emerald-800/30'
                 }`}
               >
                 <Home className="w-4 h-4" />
@@ -2373,8 +2232,8 @@ export default function App() {
                 }}
                 className={`w-full px-3 py-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'track' 
-                    ? 'bg-amber-600 text-slate-950 shadow-md font-black' 
-                    : 'text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750'
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-[#01351C] shadow-md font-black' 
+                    : 'text-emerald-50 hover:text-white bg-emerald-950 hover:bg-emerald-900 border border-emerald-800/30'
                 }`}
               >
                 <Search className="w-4 h-4" />
@@ -2388,8 +2247,8 @@ export default function App() {
                 }}
                 className={`w-full px-3 py-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'jobs' 
-                    ? 'bg-amber-600 text-slate-950 shadow-md font-black' 
-                    : 'text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-750'
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-[#01351C] shadow-md font-black' 
+                    : 'text-emerald-50 hover:text-white bg-emerald-950 hover:bg-emerald-900 border border-emerald-800/30'
                 }`}
               >
                 <Briefcase className="w-4 h-4" />
@@ -2403,8 +2262,8 @@ export default function App() {
                 }}
                 className={`w-full px-3 py-3 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'admin' 
-                    ? 'bg-slate-200 text-slate-950 shadow-md font-black' 
-                    : 'bg-slate-800 hover:bg-slate-750 text-amber-500 border border-slate-700/50'
+                    ? 'bg-emerald-50 text-[#01351C] shadow-md font-extrabold' 
+                    : 'bg-emerald-950 hover:bg-emerald-900 text-amber-450 border border-emerald-800/40'
                 }`}
               >
                 <Lock className="w-4 h-4" />
@@ -2418,9 +2277,9 @@ export default function App() {
                 setIsNewsModalOpen(true);
                 setIsMobileMenuOpen(false);
               }}
-              className="w-full px-4 py-3 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-2 bg-amber-950/40 text-amber-400 hover:text-white hover:bg-amber-900/60 border border-amber-500/30 cursor-pointer shadow-sm"
+              className="w-full px-4 py-3 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-2 bg-[#002413] text-amber-400 hover:text-white hover:bg-emerald-950 border border-amber-500/30 cursor-pointer shadow-sm"
             >
-              <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+              <Sparkles className="w-4 h-4 text-amber-450 animate-pulse" />
               <span>{lang === 'ar' ? 'موجز قرارات وزارة الموارد البشرية والعمل' : 'MHRSD Official Decisions Summary'}</span>
             </button>
 
@@ -2441,32 +2300,44 @@ export default function App() {
       </nav>
 
       {/* BANNER CLOCK & SYSTEM STATE */}
-      <div className="bg-slate-950 text-slate-400 py-2 border-b border-slate-800 text-center text-xs font-mono select-none px-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-2 text-[11px]">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`}></span>
-            <span className="text-slate-300 font-sans font-medium">
+      <div className="bg-[#002413] text-emerald-100/75 py-2.5 border-b border-[#01381F] text-center text-xs select-none px-4">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-2.5 text-[11px]">
+          
+          {/* Status Indicators row */}
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <span className={`w-1.5 h-1.5 rounded-full ${isOffline ? 'bg-amber-500' : 'bg-emerald-400'} animate-pulse flex-shrink-0`}></span>
+            <span className="text-emerald-50 font-sans font-bold text-[10px] sm:text-xs tracking-wide">
               {isOffline 
-                ? (lang === 'ar' ? 'وضع عدم الاتصال: يمكنك تخليص وقيد المعاملات محلياً الآن' : 'Offline Mode: You can manage and draft bookings locally') 
-                : t('heroSubtitle')}
+                ? (lang === 'ar' ? 'وضع العمل المحلي (دون اتصال)' : 'Offline Mode Active') 
+                : (lang === 'ar' ? 'سجل الحسابات والتعقيب متصل بالبوابة الموحدة' : 'Unified Accounting Ledger Connected')}
             </span>
-          </div>
-          <div className="flex items-center gap-3 text-slate-400 flex-wrap justify-center">
-            <span className={`px-2 py-0.5 rounded text-[10px] font-sans font-bold border transition-colors ${
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold border transition-colors ${
               isOffline 
-                ? 'bg-amber-950/40 text-amber-500 border-amber-900/60' 
-                : 'bg-emerald-950/40 text-emerald-400 border-emerald-900/60'
+                ? 'bg-amber-950/60 text-amber-400 border-amber-600/30' 
+                : 'bg-[#014122] text-emerald-300 border-emerald-800/60'
             }`}>
               {isOffline 
-                ? (lang === 'ar' ? '🔌 عمل محلي (بدون نت)' : '🔌 Local Database (Offline)') 
-                : (lang === 'ar' ? '⚡ متصل بالشبكة المعرفية' : '⚡ Online & Synced')
+                ? (lang === 'ar' ? '🔌 أوفلاين' : '🔌 Offline') 
+                : (lang === 'ar' ? '⚡ متصل' : '⚡ Online')
               }
             </span>
-            <span className="hidden sm:inline text-slate-700">|</span>
-            <span>{t('localTimePrefix')} <strong className="text-slate-200 font-mono">{liveTime}</strong></span>
-            <span className="hidden sm:inline text-slate-700">|</span>
-            <span>{t('currentUserPrefix')} <strong className="text-amber-500">essam73903@gmail.com</strong></span>
           </div>
+
+          {/* Time & User Metadata details */}
+          <div className="flex items-center justify-center gap-1.5 sm:gap-3 text-emerald-250 flex-wrap text-[10px] sm:text-xs">
+            <div className="flex items-center gap-1 bg-[#01351C]/60 px-2 py-1 rounded border border-[#014E29]/40">
+              <span className="text-amber-500">⏰</span>
+              <span className="text-emerald-50 font-mono font-medium">{liveTime}</span>
+            </div>
+            
+            <span className="text-emerald-900 hidden sm:inline">|</span>
+            
+            <div className="flex items-center gap-1 bg-[#01351C]/60 px-2 py-1 rounded border border-[#014E29]/40">
+              <span className="text-amber-500">👤</span>
+              <span className="text-amber-400 font-mono font-semibold truncate max-w-[150px] xs:max-w-none">essam73903@gmail.com</span>
+            </div>
+          </div>
+
         </div>
       </div>
 
