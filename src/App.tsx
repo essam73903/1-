@@ -15,7 +15,8 @@ import * as LucideIcons from 'lucide-react';
 import { 
   Service, BookingRequest, Transaction, AttachedFile,
   DEFAULT_SERVICES, INITIAL_TRANSACTIONS, INITIAL_BOOKINGS,
-  Job, Announcement, JobApplication, INITIAL_JOBS, INITIAL_ANNOUNCEMENTS
+  Job, Announcement, JobApplication, INITIAL_JOBS, INITIAL_ANNOUNCEMENTS,
+  ContactInquiry
 } from './types';
 
 import PasscodeModal from './components/PasscodeModal';
@@ -93,6 +94,8 @@ import makkahSunsetImg from './assets/images/makkah_bg_1779228945233.png';
 import makkahNightImg from './assets/images/makkah_night_1779229182943.png';
 // @ts-ignore
 import samaLogoImg from './assets/images/sama_logo_1779229636162.png';
+
+import LogoCustomizerModal from './components/LogoCustomizerModal';
 
 // Helper to normalize attached files for a booking request (supports single and multiple files)
 const getBookingFiles = (b: BookingRequest): Array<{ name: string; data: string; size: string }> => {
@@ -551,6 +554,8 @@ export default function App() {
 
   // Current tab: 'home' | 'track' | 'jobs' | 'admin'
   const [activeTab, setActiveTab] = useState<'home' | 'track' | 'jobs' | 'admin'>('home');
+  const [customLogo, setCustomLogo] = useState<string | null>(() => localStorage.getItem('sama_custom_logo'));
+  const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
 
   // Mobile navigation menu toggle state
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -653,6 +658,21 @@ export default function App() {
   });
   const [showPasscode, setShowPasscode] = useState(false);
 
+  // Custom alert & confirm dialog modals replacing standard browser popups to bypass iframe sandbox blockages
+  const [customAlertModal, setCustomAlertModal] = useState<{ isOpen: boolean; message: string } | null>(null);
+  const [customConfirmModal, setCustomConfirmModal] = useState<{ isOpen: boolean; message: string; onConfirm: () => void } | null>(null);
+
+  const triggerAlert = (message: string) => {
+    setCustomAlertModal({ isOpen: true, message });
+  };
+
+  const triggerConfirm = (message: string, onConfirmCallback: () => void) => {
+    setCustomConfirmModal({ isOpen: true, message, onConfirm: () => {
+      onConfirmCallback();
+      setCustomConfirmModal(null);
+    } });
+  };
+
   // Home Page Form states (initialized from local storage draft if available)
   const [clientName, setClientName] = useState(() => {
     try {
@@ -738,8 +758,8 @@ export default function App() {
   const [isNewsLoading, setIsNewsLoading] = useState<boolean>(false);
   const [newsError, setNewsError] = useState<string | null>(null);
 
-  // Admin Inner-Tab: 'ledger' | 'requests' | 'services' | 'stats' | 'whatsapp' | 'jobs'
-  const [adminTab, setAdminTab] = useState<'stats' | 'requests' | 'ledger' | 'services' | 'whatsapp' | 'jobs'>('stats');
+  // Admin Inner-Tab: 'ledger' | 'requests' | 'services' | 'stats' | 'whatsapp' | 'jobs' | 'customizer' | 'contacts'
+  const [adminTab, setAdminTab] = useState<'stats' | 'requests' | 'ledger' | 'services' | 'whatsapp' | 'jobs' | 'customizer' | 'contacts'>('stats');
 
   // New Transaction Form State (Admin)
   const [txClientName, setTxClientName] = useState('');
@@ -809,6 +829,75 @@ export default function App() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState(false);
 
   // Customizable Status Update messages for bookings
+  const [contactInquiries, setContactInquiries] = useState<ContactInquiry[]>(() => {
+    const cached = localStorage.getItem('sm_contact_inquiries');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.map((item: any) => ({
+            ...item,
+            status: item.status || 'new',
+            adminComments: item.adminComments || []
+          }));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [
+      {
+        id: 'inq-1',
+        name: 'فيصل السديري',
+        email: 'faisal@example.com',
+        subject: 'استفسار عن حجز تأشيرة زيارة عائلية',
+        message: 'السلام عليكم، أود الاستفسار عن الوقت المتوقع لصدور تأشيرة زيارة عائلية لزوجتي وطفلي من مصر، وما هي المستندات المطلوبة بالضبط؟ شكراً لكم.',
+        createdAt: '2026-06-08T09:15:00Z',
+        status: 'new',
+        adminComments: []
+      },
+      {
+        id: 'inq-2',
+        name: 'مؤسسة النماء للمقاولات',
+        email: 'info@alnamaa.sa',
+        subject: 'طلب عرض أسعار لخدمات تعقيب سنوية',
+        message: 'مرحباً، لدينا أكثر من ١٢٠ موظف وعامل حالياً ونرغب في التعاقد مع مكتبكم لإدارة جميع المعاملات وتصاريح العمل السنوية وتجديد الإقامات. نرجو التواصل معنا لتقديم عرض مالي.',
+        createdAt: '2026-06-09T11:45:00Z',
+        status: 'processing',
+        adminComments: [
+          {
+            id: 'c-1',
+            text: 'تم الاتصال بالمدير المسؤول للمؤسسة هاتفياً وجارٍ إعداد عرض السعر القانوني الشامل وإرساله.',
+            createdAt: '2026-06-09T12:00:00Z',
+            author: 'المراجع العام'
+          }
+        ]
+      }
+    ];
+  });
+  const [contactName, setContactName] = useState(() => localStorage.getItem('sm_contact_draft_name') || '');
+  const [contactEmail, setContactEmail] = useState(() => localStorage.getItem('sm_contact_draft_email') || '');
+  const [contactSubject, setContactSubject] = useState(() => localStorage.getItem('sm_contact_draft_subject') || '');
+  const [contactMessage, setContactMessage] = useState(() => localStorage.getItem('sm_contact_draft_message') || '');
+  const [contactPriority, setContactPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [contactFeedback, setContactFeedback] = useState<{ success: boolean; msg: string } | null>(null);
+  const [contactSearchText, setContactSearchText] = useState('');
+  const [ticketStatusFilter, setTicketStatusFilter] = useState<'all' | 'new' | 'processing' | 'resolved'>('all');
+  const [ticketPriorityFilter, setTicketPriorityFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all');
+  const [tmpComments, setTmpComments] = useState<Record<string, string>>({});
+  const [adminAuthorName, setAdminAuthorName] = useState('المشرف الإداري');
+  const [whatsAppModalTicket, setWhatsAppModalTicket] = useState<ContactInquiry | null>(null);
+  const [whatsAppClientPhone, setWhatsAppClientPhone] = useState('');
+  const [whatsAppCustomText, setWhatsAppCustomText] = useState('');
+
+  // Auto-saving contact draft to localStorage as user types
+  useEffect(() => {
+    localStorage.setItem('sm_contact_draft_name', contactName);
+    localStorage.setItem('sm_contact_draft_email', contactEmail);
+    localStorage.setItem('sm_contact_draft_subject', contactSubject);
+    localStorage.setItem('sm_contact_draft_message', contactMessage);
+  }, [contactName, contactEmail, contactSubject, contactMessage]);
+
   const [statusMsgPending, setStatusMsgPending] = useState<string>(() => {
     return localStorage.getItem('sm_status_msg_pending') || 'قيد الانتظار لمراجعة الإدارة - نعتز بثقتكم وسنتولى معالجتها حالاً.';
   });
@@ -822,6 +911,80 @@ export default function App() {
     return localStorage.getItem('sm_status_msg_cancelled') || 'ملغية - نرجو التواصل مع الإدارة للاستفسار والتحقق.';
   });
   const [saveSuccessStatusMsg, setSaveSuccessStatusMsg] = useState(false);
+
+  // Website Customizer States
+  const [heroTitleAr, setHeroTitleAr] = useState<string>(() => localStorage.getItem('sm_hero_title_ar') || 'ننجز معاملاتك بكل ثقة وكفاءة');
+  const [heroTitleEn, setHeroTitleEn] = useState<string>(() => localStorage.getItem('sm_hero_title_en') || 'We Process Your Transactions with Complete Trust & Efficiency');
+  const [portalBadgeAr, setPortalBadgeAr] = useState<string>(() => localStorage.getItem('sm_portal_badge_ar') || 'المنصة النشطة والذكية لمكتب سما المملكة للخدمات');
+  const [portalBadgeEn, setPortalBadgeEn] = useState<string>(() => localStorage.getItem('sm_portal_badge_en') || 'Sama Al-Mamlakah Digital Operations Portal');
+  const [heroBgUrl, setHeroBgUrl] = useState<string>(() => localStorage.getItem('sm_hero_bg_url') || '');
+  const [bookingBtnTextAr, setBookingBtnTextAr] = useState<string>(() => localStorage.getItem('sm_booking_btn_text_ar') || 'اطلب خدمتك الآن');
+  const [bookingBtnTextEn, setBookingBtnTextEn] = useState<string>(() => localStorage.getItem('sm_booking_btn_text_en') || 'Request Your Service Now');
+  const [trackBtnTextAr, setTrackBtnTextAr] = useState<string>(() => localStorage.getItem('sm_track_btn_text_ar') || 'الاستعلام المباشر عن حالة المعاملة');
+  const [trackBtnTextEn, setTrackBtnTextEn] = useState<string>(() => localStorage.getItem('sm_track_btn_text_en') || 'Direct Status Inquiry & Track Requests');
+  
+  const [showRegionalNetwork, setShowRegionalNetwork] = useState<boolean>(() => localStorage.getItem('sm_show_regional_network') === 'true');
+  const [beneficiariesAsia, setBeneficiariesAsia] = useState<number>(() => Number(localStorage.getItem('sm_beneficiaries_asia')) || 15000);
+  const [beneficiariesAfrica, setBeneficiariesAfrica] = useState<number>(() => Number(localStorage.getItem('sm_beneficiaries_africa')) || 9800);
+  const [beneficiariesEurope, setBeneficiariesEurope] = useState<number>(() => Number(localStorage.getItem('sm_beneficiaries_europe')) || 14200);
+
+  const [officeAddressAr, setOfficeAddressAr] = useState<string>(() => localStorage.getItem('sm_office_address_ar') || 'المملكة العربية السعودية، الرياض');
+  const [officePhone, setOfficePhone] = useState<string>(() => localStorage.getItem('sm_office_phone') || '+966 50 000 0050');
+  const [operatingHoursAr, setOperatingHoursAr] = useState<string>(() => localStorage.getItem('sm_operating_hours_ar') || 'يومياً من ٨:٠٠ ص حتى ٩:٠٠ م');
+  const [officeLicenceAr, setOfficeLicenceAr] = useState<string>(() => localStorage.getItem('sm_office_licence_ar') || 'مكتب سما المملكة مرخص ومسجل بالكامل ومطابق لمعايير رقابة وزارة الموارد البشرية والعمل السعودية لعام 2026.');
+  const [showNewsGroundingHome, setShowNewsGroundingHome] = useState<boolean>(() => localStorage.getItem('sm_show_news_grounding') !== 'false');
+
+  // Dashboard Visual & Auditory Notifications Hub States
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<string[]>([]);
+  const [notificationsMuted, setNotificationsMuted] = useState<boolean>(() => localStorage.getItem('sm_notifications_muted') === 'true');
+  const prevPendingCountRef = useRef<number>(0);
+
+  const playFriendlyMakkahChime = () => {
+    try {
+      if (typeof window === 'undefined') return;
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      
+      // Sound Tone 1 (G5 Note)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.frequency.setValueAtTime(783.99, ctx.currentTime);
+      gain1.gain.setValueAtTime(0.001, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.05);
+      gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc1.start(ctx.currentTime);
+      osc1.stop(ctx.currentTime + 0.35);
+
+      // Sound Tone 2 (C6 Note) with slight delay
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.15);
+      gain2.gain.setValueAtTime(0.001, ctx.currentTime + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.2);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.55);
+      osc2.start(ctx.currentTime + 0.15);
+      osc2.stop(ctx.currentTime + 0.55);
+    } catch (e) {
+      console.warn("Failed to play audio notification chime:", e);
+    }
+  };
+
+  useEffect(() => {
+    const activePendingList = bookings.filter(b => b.status === 'pending');
+    const currentPendingCount = activePendingList.length;
+
+    if (activeTab === 'admin' && isAdminAuthenticated && currentPendingCount > prevPendingCountRef.current) {
+      if (!notificationsMuted) {
+        playFriendlyMakkahChime();
+      }
+    }
+    prevPendingCountRef.current = currentPendingCount;
+  }, [bookings, activeTab, isAdminAuthenticated, notificationsMuted]);
 
   // Compute the filtered list of bookings based on advanced filtering criteria (date, service type, payment status, name/phone search)
   const filteredBookings = useMemo(() => {
@@ -1581,6 +1744,182 @@ export default function App() {
     e.target.value = ''; // Reset input to allow duplicate selection
   };
   
+  // Submit Contact Inquiry Form from bottom of Home Page
+  const handleContactInquirySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contactName.trim() || !contactEmail.trim() || !contactSubject.trim() || !contactMessage.trim()) {
+      setContactFeedback({
+        success: false,
+        msg: lang === 'en' 
+          ? 'Please fill in all the required fields.' 
+          : 'يرجى تعبئة جميع الحقول المطلوبة لإرسال استفسارك.'
+      });
+      return;
+    }
+
+    const newInquiry: ContactInquiry = {
+      id: `inq-${Date.now()}`,
+      name: contactName.trim() || (lang === 'en' ? 'Anonymous Visitor' : 'زائر تواصل مجهول'),
+      email: contactEmail.trim(),
+      subject: contactSubject.trim(),
+      message: contactMessage.trim(),
+      createdAt: new Date().toISOString(),
+      status: 'new',
+      priority: contactPriority,
+      adminComments: []
+    };
+
+    const updatedInquiries = [newInquiry, ...contactInquiries];
+    setContactInquiries(updatedInquiries);
+    localStorage.setItem('sm_contact_inquiries', JSON.stringify(updatedInquiries));
+
+    setContactFeedback({
+      success: true,
+      msg: lang === 'en'
+        ? 'Your message has been sent successfully! Our administrative team will reply shortly.'
+        : 'تم إرسال رسالتك واستفسارك بنجاح! سيتواصل معك كادر مكتب سما المملكة الإداري قريباً.'
+    });
+
+    // Reset fields
+    setContactName('');
+    setContactEmail('');
+    setContactSubject('');
+    setContactMessage('');
+    setContactPriority('medium');
+
+    // Trigger visual notification sound/alert
+    triggerAlert(
+      lang === 'en'
+        ? '✅ Your message was sent successfully to our customer care team!'
+        : '✅ تم إرسال استفسارك بنجاح إلى فريق الدعم وحفظه بقسم طلبات التواصل!'
+    );
+  };
+
+  // Update Inquiry Status in administrative CRM panel
+  const handleUpdateContactInquiryStatus = (id: string, newStatus: 'new' | 'processing' | 'resolved') => {
+    const updated = contactInquiries.map(item => {
+      if (item.id === id) {
+        return { ...item, status: newStatus };
+      }
+      return item;
+    });
+    setContactInquiries(updated);
+    localStorage.setItem('sm_contact_inquiries', JSON.stringify(updated));
+    
+    const statusLabel = newStatus === 'new' ? 'جديد قيد الانتظار' : newStatus === 'processing' ? 'قيد المعالجة الإدارية' : 'تم الرد وموثق إدارياً';
+    triggerAlert(`🎯 تم تحديث حالة تذكرة التواصل بنجاح إلى: [${statusLabel}]`);
+  };
+
+  // Add Comment into Inquiry ticket
+  const handleAddInquiryAdminComment = (inquiryId: string) => {
+    const commentText = tmpComments[inquiryId];
+    if (!commentText || !commentText.trim()) {
+      triggerAlert('⚠️ يرجى كتابة نص الملاحظة الإدارية أولاً.');
+      return;
+    }
+
+    const newComment = {
+      id: `c-${Date.now()}`,
+      text: commentText.trim(),
+      createdAt: new Date().toISOString(),
+      author: adminAuthorName.trim() || 'المشرف الإداري'
+    };
+
+    const updated = contactInquiries.map(item => {
+      if (item.id === inquiryId) {
+        const commentsList = item.adminComments || [];
+        return {
+          ...item,
+          adminComments: [...commentsList, newComment]
+        };
+      }
+      return item;
+    });
+
+    setContactInquiries(updated);
+    localStorage.setItem('sm_contact_inquiries', JSON.stringify(updated));
+
+    // Reset this inquiry's input representation
+    setTmpComments(prev => ({
+      ...prev,
+      [inquiryId]: ''
+    }));
+
+    triggerAlert('✅ تم حفظ وإدراج الملاحظة الإدارية على هذا الاستفسار بنجاح.');
+  };
+
+  // Update Inquiry Priority status in CRM
+  const handleUpdateContactInquiryPriority = (id: string, newPriority: 'low' | 'medium' | 'high') => {
+    const updated = contactInquiries.map(item => {
+      if (item.id === id) {
+        return { ...item, priority: newPriority };
+      }
+      return item;
+    });
+    setContactInquiries(updated);
+    localStorage.setItem('sm_contact_inquiries', JSON.stringify(updated));
+    const priorityLabel = newPriority === 'high' ? 'عاجل جداً' : newPriority === 'medium' ? 'متوسط الأهمية' : 'عادي / منخفض';
+    triggerAlert(`🎯 تم تحديث مستوى أولوية التذكرة بنجاح إلى: [${priorityLabel}]`);
+  };
+
+  // Export all contact inquiries to standard UTF-8 CSV report with a BOM header
+  const handleExportContactInquiriesCSV = () => {
+    if (contactInquiries.length === 0) {
+      triggerAlert('⚠️ لا توجد تذاكر تواصل لتصديرها حالياً.');
+      return;
+    }
+    
+    let csvContent = "\uFEFF"; 
+    csvContent += "رقم التذكرة,تاريخ التقديم,اسم المرسل,البريد الإلكتروني,الموضوع,درجة الأولوية,الحالة الإجرائية,محتوى الرسالة,عدد الملاحظات الإدارية\n";
+    
+    contactInquiries.forEach(item => {
+      const ticketId = `TKT-${item.id.replace('inq-', '')}`;
+      const dateStr = new Date(item.createdAt).toLocaleDateString('ar-SA') + " " + new Date(item.createdAt).toLocaleTimeString('ar-SA');
+      const name = item.name.replace(/"/g, '""');
+      const email = item.email.replace(/"/g, '""');
+      const subject = item.subject.replace(/"/g, '""');
+      const priorityLabel = item.priority === 'high' ? 'عاجل جداً' : item.priority === 'low' ? 'عادي / منخفض' : 'متوسط الأهمية';
+      const statusLabel = item.status === 'resolved' ? 'تم الرد' : item.status === 'processing' ? 'قيد المعالجة' : 'جديد';
+      const msg = item.message.replace(/"/g, '""').replace(/\n/g, ' ');
+      const commentsCount = item.adminComments?.length || 0;
+      
+      csvContent += `"${ticketId}","${dateStr}","${name}","${email}","${subject}","${priorityLabel}","${statusLabel}","${msg}","${commentsCount}"\n`;
+    });
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `تقرير_تذاكر_تواصل_سما_المملكة_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    triggerAlert('📥 تم تصدير وتحميل تقرير التذاكر الشامل بنجاح بصيغة Excel (CSV).');
+  };
+
+  // Delete comment from Inquiry ticket
+  const handleDeleteInquiryAdminComment = (inquiryId: string, commentId: string) => {
+    if (!window.confirm('هل أنت متأكد من رغبتك في حذف هذا التعليق الإداري؟ لا يمكن التراجع عن ذلك.')) {
+      return;
+    }
+
+    const updated = contactInquiries.map(item => {
+      if (item.id === inquiryId) {
+        const commentsList = item.adminComments || [];
+        return {
+          ...item,
+          adminComments: commentsList.filter(c => c.id !== commentId)
+        };
+      }
+      return item;
+    });
+
+    setContactInquiries(updated);
+    localStorage.setItem('sm_contact_inquiries', JSON.stringify(updated));
+    triggerAlert('🗑️ تم حذف الملاحظة الإدارية بنجاح.');
+  };
+
   // Submit Customer booking from public site (triggers secure payment checkout wizard)
   const handleClientBookingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1984,9 +2323,10 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (id: string) => {
-    if (confirm('هل أنت متأكد من رغبتك في حذف هذا القيد المالي نهائياً؟')) {
+    triggerConfirm('هل أنت متأكد من رغبتك في حذف هذا القيد المالي نهائياً؟', () => {
       setTransactions(prev => prev.filter(t => t.id !== id));
-    }
+      triggerAlert('تمت إزالة القيد المالي من الدفتر بنجاح!');
+    });
   };
 
   const handleDeleteService = (id: string) => {
@@ -2000,7 +2340,7 @@ export default function App() {
     if (!serviceToDeleteCheck) return;
     setServices(prev => prev.filter(s => s.id !== serviceToDeleteCheck.id));
     setServiceToDeleteCheck(null);
-    alert('تم حذف وتطهير بند الخدمة بنجاح من دليل المكتب!');
+    triggerAlert('تم حذف وتطهير بند الخدمة بنجاح من دليل المكتب!');
   };
 
   const handleManualTestWaDispatch = async () => {
@@ -2085,7 +2425,7 @@ export default function App() {
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               <div className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-xl overflow-hidden border-2 border-amber-400 flex-shrink-0 bg-slate-950 shadow-md">
                 <img 
-                  src={samaLogoImg} 
+                  src={customLogo || samaLogoImg} 
                   alt={t('appName')} 
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
@@ -2351,7 +2691,7 @@ export default function App() {
             {/* Elegant Saudi Pattern Hero */}
             <div 
               className="bg-slate-900 text-white rounded-2xl overflow-hidden shadow-2xl relative border border-slate-850 bg-cover bg-center transition-all duration-500" 
-              style={{ backgroundImage: `linear-gradient(to left, rgba(15, 23, 42, 0.96) 45%, rgba(15, 23, 42, 0.7) 80%, rgba(15, 23, 42, 0.3)), url("${getActiveMakkahImg()}")` }}
+              style={{ backgroundImage: `linear-gradient(to left, rgba(15, 23, 42, 0.96) 45%, rgba(15, 23, 42, 0.7) 80%, rgba(15, 23, 42, 0.3)), url("${heroBgUrl || getActiveMakkahImg()}")` }}
             >
               {/* Abs decoration backdrop line */}
               <div className="absolute top-0 right-0 w-96 h-96 bg-amber-600/10 rounded-full blur-3xl -z-10"></div>
@@ -2362,19 +2702,15 @@ export default function App() {
                 <div className="lg:col-span-7 flex flex-col justify-center text-center md:text-right">
                   <div className="inline-flex items-center gap-2 bg-amber-500/10 text-amber-500 px-3 py-1 rounded-full text-xs font-bold border border-amber-500/20 mb-4 self-center md:self-start">
                     <Activity className="w-3.5 h-3.5 animate-pulse" />
-                    <span>{t('portalTitleDefault')}</span>
+                    <span>{lang === 'en' ? portalBadgeEn : portalBadgeAr}</span>
                   </div>
                   <h1 className="text-3xl md:text-5xl font-black mb-4 leading-normal text-slate-100 font-sans">
-                    {lang === 'en' ? (
-                      <>We Process Your Transactions with Complete <span className="text-amber-500 underline decoration-wavy decoration-amber-500/40">Trust & Efficiency</span></>
-                    ) : (
-                      <>ننجز معاملاتك بكل <span className="text-amber-500 underline decoration-wavy decoration-amber-500/40">ثقة وكفاءة</span></>
-                    )}
+                    {lang === 'en' ? heroTitleEn : heroTitleAr}
                   </h1>
                   
                   <div className="bg-slate-950/80 backdrop-blur-md rounded-2xl p-5 border border-amber-500/30 text-right max-w-3xl mb-8 shadow-2xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-1.5 h-full bg-amber-500"></div>
-                    <div className="flex items-center gap-2 text-amber-500 font-extrabold text-xs mb-2 bg-amber-500/10 w-fit px-2.5 py-1 rounded-md border border-amber-500/20">
+                    <div className="flex items-center gap-2 text-amber-500 font-extrabold text-xs mb-2 bg-amber-500/10 w-fit px-2.5 py-1 rounded-md border border-amber-500/23">
                       <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
                       <span>{lang === 'en' ? 'Official Welcome Statement for Visitors & Clients' : 'البيان الترحيبي الخاص بالزوار والعملاء'}</span>
                     </div>
@@ -2388,13 +2724,13 @@ export default function App() {
                       href="#booking-anchor" 
                       className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold px-8 py-3.5 rounded-lg text-center transition-all shadow-lg hover:shadow-amber-600/20 text-sm"
                     >
-                      {lang === 'en' ? 'Request Your Service Now' : 'اطلب خدمتك الآن'}
+                      {lang === 'en' ? bookingBtnTextEn : bookingBtnTextAr}
                     </a>
                     <button 
                       onClick={() => handleTabClick('track')}
                       className="bg-slate-800 hover:bg-slate-750 hover:text-white text-slate-200 font-bold px-8 py-3.5 rounded-lg text-center transition-all text-sm border border-slate-700"
                     >
-                      {lang === 'en' ? 'Direct Status Inquiry & Track Requests' : 'الاستعلام المباشر عن حالة المعاملة'}
+                      {lang === 'en' ? trackBtnTextEn : trackBtnTextAr}
                     </button>
                   </div>
                 </div>
@@ -2411,7 +2747,7 @@ export default function App() {
                     
                     {/* The Actual Luxury Logo Image */}
                     <img 
-                      src={samaLogoImg} 
+                      src={customLogo || samaLogoImg} 
                       alt="شعار مكتب سما المملكة" 
                       className="w-full h-full object-cover relative z-0"
                       referrerPolicy="no-referrer"
@@ -2427,7 +2763,29 @@ export default function App() {
                     <span className="absolute top-3 left-3 z-25 bg-amber-500 text-slate-950 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-400 animate-pulse uppercase tracking-wider font-sans">
                       المكتب الرقمي الموثق
                     </span>
+
+                    {/* Interactive Edit Hover Overlay */}
+                    <div 
+                      onClick={() => setIsLogoModalOpen(true)}
+                      className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-all duration-300 z-30 flex flex-col items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <div className="bg-amber-500 text-slate-950 p-3 rounded-full shadow-lg border border-amber-400 transform scale-75 group-hover:scale-100 transition-transform duration-300">
+                        <Sparkles className="w-5 h-5 fill-slate-950" />
+                      </div>
+                      <span className="text-amber-400 font-bold text-xs bg-slate-950/90 px-3 py-1 rounded-md border border-amber-500/20">
+                        {lang === 'en' ? 'Modify Logo (AI/Upload)' : 'تخصيص الشعار (ذكاء اصطناعي)'}
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Under logo control action */}
+                  <button
+                    onClick={() => setIsLogoModalOpen(true)}
+                    className="mt-4 inline-flex items-center gap-2 bg-gradient-to-r from-[#02522E] hover:from-[#01351C] to-emerald-800 text-white font-bold px-4 py-2 rounded-xl text-xs border border-emerald-500/20 shadow-md cursor-pointer transition-all active:scale-97 hover:text-amber-400"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                    <span>{lang === 'en' ? 'Modify Office Logo (AI)' : 'تخصيص الشعار بالذكاء الاصطناعي'}</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2491,7 +2849,7 @@ export default function App() {
             </div>
 
             {/* REGIONAL PUBLISHING & OPERATIONS NETWORK WIDGET */}
-            <div className="hidden bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-2xl p-6 md:p-8 shadow-xl border border-slate-800 space-y-6 relative overflow-hidden">
+            <div className={`${showRegionalNetwork ? 'block' : 'hidden'} bg-gradient-to-br from-slate-900 to-slate-950 text-white rounded-2xl p-6 md:p-8 shadow-xl border border-slate-800 space-y-6 relative overflow-hidden`}>
               <div className="absolute top-0 left-0 w-64 h-64 bg-amber-600/5 rounded-full blur-3xl -z-10"></div>
               <div className="absolute bottom-0 right-0 w-64 h-64 bg-emerald-600/5 rounded-full blur-3xl -z-10"></div>
 
@@ -2605,7 +2963,7 @@ export default function App() {
 
                       <div className="border-t border-slate-900 pt-3 mt-4 flex justify-between items-center text-[10px]">
                         <span className="text-slate-500 font-sans">{lang === 'en' ? 'Target Audience Coverage' : 'تغطية الجمهور المستهدف'}</span>
-                        <strong className="text-amber-400 font-extrabold font-sans">+ 15,000 {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
+                        <strong className="text-amber-400 font-extrabold font-sans">+ {beneficiariesAsia.toLocaleString()} {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
                       </div>
                     </div>
                   )}
@@ -2649,7 +3007,7 @@ export default function App() {
 
                       <div className="border-t border-slate-900 pt-3 mt-4 flex justify-between items-center text-[10px]">
                         <span className="text-slate-500 font-sans">{lang === 'en' ? 'Target Audience Coverage' : 'تغطية الجمهور المستهدف'}</span>
-                        <strong className="text-emerald-400 font-extrabold font-sans">+ 9,800 {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
+                        <strong className="text-emerald-400 font-extrabold font-sans">+ {beneficiariesAfrica.toLocaleString()} {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
                       </div>
                     </div>
                   )}
@@ -2693,7 +3051,7 @@ export default function App() {
 
                       <div className="border-t border-slate-900 pt-3 mt-4 flex justify-between items-center text-[10px]">
                         <span className="text-slate-500 font-sans">{lang === 'en' ? 'Target Audience Coverage' : 'تغطية الجمهور المستهدف'}</span>
-                        <strong className="text-indigo-400 font-extrabold font-sans">+ 14,200 {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
+                        <strong className="text-indigo-400 font-extrabold font-sans">+ {beneficiariesEurope.toLocaleString()} {lang === 'en' ? 'Beneficiaries' : 'مستفيد'}</strong>
                       </div>
                     </div>
                   )}
@@ -2889,94 +3247,95 @@ export default function App() {
               )}
             </section>
 
-            {/* SAUDI LABOR MINISTRY NEWS SECTION WITH GOOGLE SEARCH GROUNDING */}
-            <section className="bg-slate-900 text-white rounded-2xl p-6 md:p-8 border border-slate-850 shadow-xl space-y-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
+            {showNewsGroundingHome && (
+              <section className="bg-slate-900 text-white rounded-2xl p-6 md:p-8 border border-slate-850 shadow-xl space-y-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/5 rounded-full blur-3xl pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 w-80 h-80 bg-amber-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="space-y-1 text-right">
-                  <div className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-[10px] font-black border border-blue-500/20 uppercase tracking-wider">
-                    <Sparkles className="w-3.5 h-3.5 animate-pulse text-blue-400" />
-                    <span>تأصيل بحث جوجل المباشر (Google Search Grounding Live)</span>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div className="space-y-1 text-right">
+                    <div className="inline-flex items-center gap-1.5 bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-[10px] font-black border border-blue-500/20 uppercase tracking-wider">
+                      <Sparkles className="w-3.5 h-3.5 animate-pulse text-blue-400" />
+                      <span>تأصيل بحث جوجل المباشر (Google Search Grounding Live)</span>
+                    </div>
+                    <h2 className="text-xl md:text-2xl font-black text-slate-100 font-sans text-right">
+                      مستجدات الأنظمة وقرارات وزارة الموارد البشرية والعمل السعودية
+                    </h2>
+                    <p className="text-slate-400 text-xs leading-relaxed max-w-3xl text-right">
+                      بوابة أخبار ذكية مدمجة بالذكاء الاصطناعي الفوري ومؤسسة على نتائج البحث الحي لعام 2026 لمتابعة لوائح التأشيرات والعمل والعمالة المنزلية والمهنية عبر المنصات الرسمية (قوى، مساند، وزارة الموارد البشرية).
+                    </p>
                   </div>
-                  <h2 className="text-xl md:text-2xl font-black text-slate-100 font-sans">
-                    مستجدات الأنظمة وقرارات وزارة الموارد البشرية والعمل السعودية
-                  </h2>
-                  <p className="text-slate-400 text-xs leading-relaxed max-w-3xl">
-                    بوابة أخبار ذكية مدمجة بالذكاء الاصطناعي الفوري ومؤسسة على نتائج البحث الحي لعام 2026 لمتابعة لوائح التأشيرات والعمل والعمالة المنزلية والمهنية عبر المنصات الرسمية (قوى، مساند، وزارة الموارد البشرية).
-                  </p>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={fetchLaborNews}
-                  disabled={isNewsLoading}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all self-stretch md:self-auto justify-center disabled:opacity-50 cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isNewsLoading ? 'animate-spin' : ''}`} />
-                  <span>{isNewsLoading ? 'يجري جلب وتأصيل المستجدات...' : 'تحديث الأخبار فورياً'}</span>
-                </button>
-              </div>
-
-              {newsError ? (
-                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center space-y-2 text-right">
-                  <p className="text-xs text-red-400 font-sans font-bold">⚠️ {newsError}</p>
                   <button
                     type="button"
                     onClick={fetchLaborNews}
-                    className="text-[10px] underline text-red-300 font-bold hover:text-red-200"
+                    disabled={isNewsLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs rounded-xl shadow-md transition-all self-stretch md:self-auto justify-center disabled:opacity-50 cursor-pointer"
                   >
-                    محاولة الاتصال مرة أخرى
+                    <RefreshCw className={`w-3.5 h-3.5 ${isNewsLoading ? 'animate-spin' : ''}`} />
+                    <span>{isNewsLoading ? 'يجري جلب وتأصيل المستجدات...' : 'تحديث الأخبار فورياً'}</span>
                   </button>
                 </div>
-              ) : isNewsLoading ? (
-                <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-8 flex flex-col items-center justify-center space-y-4 text-center">
-                  <div className="relative flex h-8 w-8">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-8 w-8 bg-blue-500 items-center justify-center">
-                      <RefreshCw className="w-4 h-4 text-white animate-spin" />
-                    </span>
+
+                {newsError ? (
+                  <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-center space-y-2 text-right">
+                    <p className="text-xs text-red-400 font-sans font-bold">⚠️ {newsError}</p>
+                    <button
+                      type="button"
+                      onClick={fetchLaborNews}
+                      className="text-[10px] underline text-red-300 font-bold hover:text-red-200"
+                    >
+                      محاولة الاتصال مرة أخرى
+                    </button>
                   </div>
-                  <div className="space-y-1 text-center">
-                    <p className="text-xs font-black text-slate-200">يجري فحص وتجميع أحدث القرارات الرسمية الصادرة من وزارة الموارد البشرية السعودية من الويب...</p>
-                    <p className="text-[10px] text-slate-505">يتضمن البحث المباشر في لوائح التأشيرات، رخص العمل، قرارات الاستقدام الحالية (Musaned & Qiwa)</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-5">
-                  <div className="bg-slate-950/65 border border-slate-850 rounded-xl p-6 shadow-inner text-right relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-1.5 h-full bg-blue-500"></div>
-                    <div className="prose prose-invert prose-xs max-w-none text-slate-200 leading-relaxed font-sans whitespace-pre-wrap text-xs md:text-sm">
-                      {laborNews || "انقر فوق زر تحديث الأخبار لعرض مستجدات العمل والعمالة بالتأصيل الحي."}
+                ) : isNewsLoading ? (
+                  <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-8 flex flex-col items-center justify-center space-y-4 text-center">
+                    <div className="relative flex h-8 w-8">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-8 w-8 bg-blue-500 items-center justify-center">
+                        <RefreshCw className="w-4 h-4 text-white animate-spin" />
+                      </span>
+                    </div>
+                    <div className="space-y-1 text-center">
+                      <p className="text-xs font-black text-slate-200">يجري فحص وتجميع أحدث القرارات الرسمية الصادرة من وزارة الموارد البشرية السعودية من الويب...</p>
+                      <p className="text-[10px] text-slate-505">يتضمن البحث المباشر في لوائح التأشيرات، رخص العمل، قرارات الاستقدام الحالية (Musaned & Qiwa)</p>
                     </div>
                   </div>
-
-                  {laborNewsSources && laborNewsSources.length > 0 && (
-                    <div className="space-y-3">
-                      <h4 className="text-xs font-extrabold text-slate-300 flex items-center justify-start gap-1 text-right">
-                        <span>🔗</span>
-                        <span>مصادر ومراجع التحقق والتأصيل الرقمي (Grounding Sources):</span>
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                        {laborNewsSources.map((src, idx) => (
-                          <a
-                            key={idx}
-                            href={src.uri}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center justify-between p-3 bg-slate-950/40 border border-slate-850 hover:border-blue-500/40 rounded-lg text-[10px] md:text-xs text-blue-400 hover:text-blue-300 transition-all font-bold group"
-                          >
-                            <span className="truncate max-w-[85%] text-right">{src.title}</span>
-                            <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400" />
-                          </a>
-                        ))}
+                ) : (
+                  <div className="space-y-5">
+                    <div className="bg-slate-950/65 border border-slate-850 rounded-xl p-6 shadow-inner text-right relative overflow-hidden">
+                      <div className="absolute top-0 right-0 w-1.5 h-full bg-blue-500"></div>
+                      <div className="prose prose-invert prose-xs max-w-none text-slate-200 leading-relaxed font-sans whitespace-pre-wrap text-xs md:text-sm text-right">
+                        {laborNews || "انقر فوق زر تحديث الأخبار لعرض مستجدات العمل والعمالة بالتأصيل الحي."}
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
-            </section>
+
+                    {laborNewsSources && laborNewsSources.length > 0 && (
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-extrabold text-slate-300 flex items-center justify-start gap-1 text-right">
+                          <span>🔗</span>
+                          <span>مصادر ومراجع التحقق والتأصيل الرقمي (Grounding Sources):</span>
+                        </h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {laborNewsSources.map((src, idx) => (
+                            <a
+                              key={idx}
+                              href={src.uri}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center justify-between p-3 bg-slate-950/40 border border-slate-850 hover:border-blue-500/40 rounded-lg text-[10px] md:text-xs text-blue-400 hover:text-blue-300 transition-all font-bold group"
+                            >
+                              <span className="truncate max-w-[85%] text-right">{src.title}</span>
+                              <ExternalLink className="w-3.5 h-3.5 text-slate-500 group-hover:text-blue-400" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
 
             {/* REALTIME SYSTEM SUBMIT FORM */}
             <section id="booking-anchor" className="bg-slate-100 py-10 rounded-2xl border border-slate-200 shadow-inner px-4 block">
@@ -3187,6 +3546,146 @@ export default function App() {
                       <span>{lang === 'en' ? 'Confirm Submission & Route to Sama Al-Mamlakah Office' : 'تأكيد الإرسال والترحيل لمكتب سما المملكة'}</span>
                     </button>
                   </div>
+                </form>
+              </div>
+            </section>
+
+            {/* NEW CONTACT FORM SECTION ("نموذج اتصال جديد") */}
+            <section id="contact-form-section" className="bg-slate-50 py-10 rounded-2xl border border-slate-200 shadow-sm px-4 mt-8 block">
+              <div className="max-w-xl mx-auto bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+                <div className="bg-gradient-to-l from-amber-600 to-orange-500 text-white p-6 space-y-1">
+                  <div className="flex items-center gap-2 justify-end" dir="rtl">
+                    <MessageSquare className="w-5 h-5 text-amber-200" />
+                    <h3 className="text-xl font-bold">
+                      {lang === 'en' ? 'Contact Us & Send Inquiries' : 'تواصل معنا وأرسل استفسارك'}
+                    </h3>
+                  </div>
+                  <p className="text-amber-50 text-xs text-center sm:text-right" dir="rtl">
+                    {lang === 'en' ? 'Have questions? Drop us a line below and we will get back to you.' : 'لديك أي استفسار؟ أرسل لنا وسيرد عليك كادر المراجعة في مكتب سما المملكة قريباً.'}
+                  </p>
+                </div>
+
+                <form onSubmit={handleContactInquirySubmit} className="p-6 space-y-4">
+                  {contactFeedback && (
+                    <div className={`p-3 rounded-lg border text-sm flex items-start gap-2.5 ${contactFeedback.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                      {contactFeedback.success ? <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-emerald-600 mt-0.5" /> : <AlertCircle className="w-5 h-5 flex-shrink-0 text-red-600 mt-0.5" />}
+                      <div className="text-xs font-bold leading-relaxed">{contactFeedback.msg}</div>
+                    </div>
+                  )}
+
+                  <div className="space-y-3 font-sans">
+                    {/* Visitor Name Field */}
+                    <div className="space-y-1 text-right" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+                      <label className="block text-xs font-extrabold text-slate-700">
+                        {lang === 'en' ? 'Full Name:' : 'الاسم بالكامل:'}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <Users className="h-4 w-4 text-slate-400" />
+                        </span>
+                        <input
+                          type="text"
+                          required
+                          value={contactName}
+                          onChange={(e) => setContactName(e.target.value)}
+                          placeholder={lang === 'en' ? 'Enter your full name' : 'مثال: فيصل السديري'}
+                          className="pl-3 pr-9 py-2.5 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400 text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Email Field */}
+                    <div className="space-y-1 text-right" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+                      <label className="block text-xs font-extrabold text-slate-700">
+                        {lang === 'en' ? 'Email Address:' : 'البريد الإلكتروني:'}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <Globe className="h-4 w-4 text-slate-400" />
+                        </span>
+                        <input
+                          type="email"
+                          required
+                          value={contactEmail}
+                          onChange={(e) => setContactEmail(e.target.value)}
+                          placeholder="faisal@example.com"
+                          className="pl-3 pr-9 py-2.5 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400 text-slate-900 animate-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Message Subject Field */}
+                    <div className="space-y-1 text-right" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+                      <label className="block text-xs font-extrabold text-slate-700">
+                        {lang === 'en' ? 'Inquiry Subject:' : 'موضوع الرسالة:'}
+                      </label>
+                      <div className="relative">
+                        <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <HelpCircle className="h-4 w-4 text-slate-400" />
+                        </span>
+                        <input
+                          type="text"
+                          required
+                          value={contactSubject}
+                          onChange={(e) => setContactSubject(e.target.value)}
+                          placeholder={lang === 'en' ? 'What is this regarding?' : 'مثال: استفسار بشأن أتعاب استقدام تأشيرة'}
+                          className="pl-3 pr-9 py-2.5 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400 text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Message Content Field */}
+                    <div className="space-y-1 text-right" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+                      <label className="block text-xs font-extrabold text-slate-700">
+                        {lang === 'en' ? 'Message Content:' : 'محتوى الرسالة (التفاصيل):'}
+                      </label>
+                      <textarea
+                        required
+                        rows={4}
+                        value={contactMessage}
+                        onChange={(e) => setContactMessage(e.target.value)}
+                        placeholder={lang === 'en' ? 'Write details of your question or message here...' : 'اكتب تفاصيل استفسارك أو طلبك هنا بالكامل ليسهل الكادر الرد عليك ومتابعتك...'}
+                        className="p-3 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all placeholder:text-slate-400 text-slate-900"
+                      />
+                    </div>
+
+                    {/* Ticket Priority Level Select */}
+                    <div className="space-y-1 text-right" dir={lang === 'en' ? 'ltr' : 'rtl'}>
+                      <label className="block text-xs font-extrabold text-slate-700">
+                        {lang === 'en' ? 'Urgency & Priority level:' : 'درجة الاستعجال ومستوى الأولوية:'}
+                      </label>
+                      <select
+                        value={contactPriority}
+                        onChange={(e) => setContactPriority(e.target.value as any)}
+                        className="p-2.5 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 transition-all text-slate-900 list-none"
+                      >
+                        <option value="low">{lang === 'en' ? '🟢 Normal / General Enquiry' : '🟢 عادي / استفسار عام'}</option>
+                        <option value="medium">{lang === 'en' ? '🟡 Medium / Application Follow-up' : '🟡 متوسط الأهمية / متابعة معاملة قيد الإنجاز'}</option>
+                        <option value="high">{lang === 'en' ? '🔴 Urgent / Complaint or Escalation' : '🔴 هام جداً وعاجل / مشكلة إجرائية طارئة'}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Subtle draft auto-saved badge */}
+                  {(contactName || contactEmail || contactSubject || contactMessage) && (
+                    <div className="flex justify-end items-center gap-1.5 text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-150 px-2.5 py-1 rounded-lg font-sans w-fit mr-auto animate-fade-in animate-none" dir="rtl">
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                      </span>
+                      <span className="font-bold">
+                        {lang === 'en' ? 'Draft auto-saved locally' : 'تم حفظ مسودة استفسارك تلقائياً'}
+                      </span>
+                    </div>
+                  )}
+
+                  <button 
+                    type="submit" 
+                    className="w-full bg-amber-600 border border-amber-700 hover:bg-amber-500 text-white transition py-3 rounded-lg text-xs font-extrabold shadow-md flex items-center justify-center gap-2 cursor-pointer mt-2"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{lang === 'en' ? 'Send Inquiry Request' : 'إرسال طلب الاستفسار المباشر'}</span>
+                  </button>
                 </form>
               </div>
             </section>
@@ -3824,7 +4323,7 @@ export default function App() {
                                     setJobs(prev => prev.map(item => item.id === j.id ? { ...item, shares: (item.shares || 0) + 1 } : item));
                                   }}
                                   href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(
-                                    `مكتب سما المملكة يعلن عن توفر شاغر وظيفي بمسمى [${j.title}] في ${j.location}. بادر بالتقديم الإلكتروني الآن من خلال موقعنا الرسمى:`
+                                    `مكتب سما المملكة يعلن عن توفر شاغر وظيفي بمسمى [${j.title}] في ${j.location}. بادر بالتقديم الإلكتروني الآن من خلال موقعنا الرسمي:`
                                   )}&url=${encodeURIComponent(window.location.origin)}`}
                                   target="_blank" 
                                   rel="noopener noreferrer"
@@ -4199,6 +4698,188 @@ export default function App() {
         {activeTab === 'admin' && isAdminAuthenticated && (
           <div className="space-y-8 animate-fade-in">
             
+            {/* Real-time Visual Notifications Hub (نظام استجابة وتنبيهات حية للطلبات قيد الانتظار) */}
+            {(() => {
+              const pendingBookings = bookings.filter(b => b.status === 'pending' && !dismissedNotificationIds.includes(b.id));
+              if (pendingBookings.length === 0) return null;
+
+              return (
+                <div className="bg-gradient-to-br from-amber-50 to-orange-55 border border-amber-200 rounded-2xl p-6 shadow-md relative overflow-hidden text-right font-sans space-y-4 animate-fade-in" dir="rtl">
+                  {/* Gentle ambient glow */}
+                  <div className="absolute top-0 left-0 w-32 h-32 bg-amber-400/10 rounded-full blur-2xl pointer-events-none"></div>
+
+                  {/* Header Meta */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative z-10 pb-3 border-b border-amber-200/60">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500"></span>
+                        </span>
+                        <h3 className="font-extrabold text-amber-950 text-sm md:text-base flex items-center gap-1.5">
+                          <Bell className="w-4 h-4 text-orange-600 animate-bounce" />
+                          <span>مركز التحكم والإشعارات الفورية للطلبات المعلقة</span>
+                        </h3>
+                      </div>
+                      <p className="text-amber-800 text-[11px] font-sans">
+                        يوجد حالياً <strong className="font-black text-orange-700">{pendingBookings.length}</strong> معاملات جديدة بحالة <strong className="text-orange-700 bg-orange-100/80 px-1.5 py-0.5 rounded font-black text-[10px]">قيد الانتظار ⏳</strong> تحتاج إلى اتخاذ كفاءة استجابة سريعة لخدمة العميل.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-stretch sm:self-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const muted = !notificationsMuted;
+                          setNotificationsMuted(muted);
+                          localStorage.setItem('sm_notifications_muted', String(muted));
+                          triggerAlert(muted ? '🔇 تم كتم منبه صوت التنبيهات الجديدة تلقائياً.' : '🔊 تم تفعيل النغمة التنبيهية للمعاملات الجديدة!');
+                        }}
+                        className={`p-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1 border cursor-pointer ${
+                          notificationsMuted 
+                            ? 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200' 
+                            : 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200/80'
+                        }`}
+                      >
+                        {notificationsMuted ? <LucideIcons.VolumeX className="w-3.5 h-3.5" /> : <LucideIcons.Volume2 className="w-3.5 h-3.5" />}
+                        <span>{notificationsMuted ? "تشغيل منبه الصوت" : "كتم الصوت"}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const allPendingIds = pendingBookings.map(b => b.id);
+                          setDismissedNotificationIds(prev => [...prev, ...allPendingIds]);
+                          triggerAlert('👁️ تم التغاضي عن الإشعارات النشطة وإخفائها من شاشتك الحالية.');
+                        }}
+                        className="bg-amber-800/10 hover:bg-amber-800/15 text-amber-950 px-3 py-1.5 rounded-lg text-[10px] font-extrabold transition-all border border-amber-905/10 cursor-pointer"
+                      >
+                        تجاهل الكل مؤقتاً
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Pending Transactions Content Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
+                    {pendingBookings.map((b) => (
+                      <div 
+                        key={b.id}
+                        className="bg-white/90 hover:bg-white p-4 rounded-xl shadow-xs hover:shadow border border-amber-200/60 hover:border-amber-300 transition-all flex flex-col justify-between space-y-3"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-800 font-extrabold flex items-center justify-center text-xs border border-amber-200 uppercase">
+                              {b.clientName.charAt(0) || "ع"}
+                            </div>
+                            <div>
+                              <h4 className="font-extrabold text-slate-900 text-xs">{b.clientName}</h4>
+                              <span className="text-[10px] text-slate-500 font-mono" dir="ltr">{b.phoneNumber}</span>
+                            </div>
+                          </div>
+                          
+                          <span className="text-[9px] bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-black border border-orange-200 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5 text-orange-600" />
+                            <span>طلب معلق</span>
+                          </span>
+                        </div>
+
+                        <div className="bg-amber-50 rounded-lg p-2.5 border border-amber-100 text-[11px] space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-bold">الخدمة المطلوبة:</span>
+                            <span className="font-black text-amber-950">{b.serviceName}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-slate-500 font-bold">زمن الإرسال المباشر:</span>
+                            <span className="font-mono text-slate-700 text-[10px]" dir="ltr">
+                              {new Date(b.date).toLocaleDateString('ar-SA')} - {new Date(b.date).toLocaleTimeString('ar-SA', {hour: '2-digit', minute:'2-digit'})}
+                            </span>
+                          </div>
+                          {b.notes && (
+                            <div className="pt-1.5 border-t border-amber-200/50 mt-1">
+                              <span className="text-[9px] font-bold text-slate-400 block pb-0.5">تفاصيل الملاحظات المرفقة:</span>
+                              <p className="text-slate-600 line-clamp-2 text-[10px]" title={b.notes}>{b.notes}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Instant Call to Actions dashboard */}
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUpdateBookingStatus(b.id, 'processing');
+                              triggerAlert(`⚡ تم نقل المعاملة رقم (#${b.id}) بنجاح إلى حالة "تحت المعالجة الإجرائية"! يمكنك مراجعة لوحة الحسابات لتوليد الفاتورة.`);
+                            }}
+                            className="col-span-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-1.5 rounded-lg text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <LucideIcons.Play className="w-3 h-3 text-slate-950" />
+                            <span>البدء بالمعالجة</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAdminTab('requests');
+                              setReqSearchPhoneOrName(b.clientName);
+                              triggerAlert(`🔍 تم توجيهك إلى شاشة الطلبات وعرض كافة المستندات والتفاصيل الكاملة لـ "${b.clientName}".`);
+                            }}
+                            className="col-span-1 bg-slate-950 hover:bg-slate-900 text-white font-extrabold py-1.5 rounded-lg text-[10px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <LucideIcons.Eye className="w-3 h-3 text-stone-300" />
+                            <span>التفاصيل الكاملة</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const messageText = `مرحباً أ/ ${b.clientName}، نفيدك باستلام طلبك لخدمة (${b.serviceName}) لدى مكتب سما المملكة بنجاح وجارٍ مراجعة تفاصيله من كادر العمل والتدقيق الآن.`;
+                                await sendPlaceholderWhatsAppAPI(b.phoneNumber, messageText);
+                                
+                                const directLog: WhatsAppLog = {
+                                  id: `wa-log-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+                                  bookingId: b.id,
+                                  clientName: b.clientName,
+                                  phoneNumber: b.phoneNumber,
+                                  serviceName: b.serviceName,
+                                  status: 'pending',
+                                  message: messageText,
+                                  sentAt: new Date().toISOString(),
+                                  success: true,
+                                  apiResponse: 'Message dispatched manually via Notifications Hub (Status: DELIVERED)'
+                                };
+
+                                setWhatsappLogs(prev => [directLog, ...prev]);
+                                triggerAlert(`💬 تم إرسال إشعار ترحيبي وتذكيري تزامني وموثق بالهاتف للعميل عبر الـ WhatsApp مجاناً!`);
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className="col-span-1 border border-emerald-300 bg-emerald-50/50 hover:bg-emerald-100/60 text-emerald-800 font-extrabold py-1.5 rounded-lg text-[9px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <LucideIcons.MessageCircle className="w-3 h-3 text-emerald-600" />
+                            <span>تأكيد بالواتساب</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDismissedNotificationIds(prev => [...prev, b.id]);
+                              triggerAlert('👁️ تم إخفاء التنبيه الخاص بهذا الطلب مؤقتاً.');
+                            }}
+                            className="col-span-1 border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-500 font-bold py-1.5 rounded-lg text-[9px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <LucideIcons.XCircle className="w-3 h-3 text-slate-400" />
+                            <span>تجاهل مؤقت</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Admin Header Toolbar */}
             <div className="bg-white p-5 rounded-xl shadow-md border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4">
               <div>
@@ -4250,6 +4931,29 @@ export default function App() {
                   }`}
                 >
                   💼 إدارة الوظائف والإعلانات والطلبات ({jobApplications.filter(a => a.status === 'pending').length})
+                </button>
+                <button
+                  onClick={() => setAdminTab('customizer')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all whitespace-nowrap bg-purple-950/20 text-purple-400 border border-purple-500/20 hover:bg-purple-900/40 ${
+                    adminTab === 'customizer' ? 'bg-purple-600 text-white border-purple-500' : ''
+                  }`}
+                >
+                  ⚙️ تخصيص مكونات ومحتوى الموقع
+                </button>
+                <button
+                  onClick={() => setAdminTab('contacts')}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all whitespace-nowrap bg-blue-950/20 text-blue-400 border border-blue-500/20 hover:bg-blue-900/40 ${
+                    adminTab === 'contacts' ? 'bg-blue-600 text-white border-blue-500' : ''
+                  }`}
+                >
+                  ✉️ طلبات التواصل للزوار ({contactInquiries.length})
+                </button>
+                <button
+                  onClick={() => setIsLogoModalOpen(true)}
+                  className="px-3 py-1.5 rounded text-xs font-bold transition-all whitespace-nowrap bg-indigo-950/35 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-900/45 cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-97"
+                >
+                  <span>🎨</span>
+                  <span>هوّية وشعار المكتب بالذكاء الاصطناعي</span>
                 </button>
               </div>
             </div>
@@ -4851,7 +5555,7 @@ export default function App() {
                                       return t;
                                     });
                                     setTransactions(updatedTxs);
-                                    alert('✅ تم اعتماد التحويل البنكي وتأكيد السداد!');
+                                    triggerAlert('✅ تم اعتماد التحويل البنكي وتأكيد السداد!');
                                   }}
                                   className="bg-indigo-650 hover:bg-indigo-700 text-white px-2 py-1.5 rounded font-extrabold text-[10px] whitespace-nowrap transition-colors"
                                   title="اعتماد الحوالة البنكية وتصفية الديون"
@@ -4888,10 +5592,11 @@ export default function App() {
                                  </button>
                                 <button
                                   onClick={() => {
-                                    if (window.confirm('هل تريد حذف سجل الطلب هذا نهائياً من أرشيف المراجعة؟')) {
+                                    triggerConfirm('هل تريد حذف سجل الطلب هذا نهائياً من أرشيف المراجعة؟', () => {
                                       const filtered = bookings.filter(item => item.id !== b.id);
                                       setBookings(filtered);
-                                    }
+                                      triggerAlert('تم حذف مراجعة الطلب بنجاح من أرشيف المراجعة.');
+                                    });
                                   }}
                                   className="p-1 px-1.5 text-red-650 hover:text-white hover:bg-red-605 border border-red-200 rounded transition-colors"
                                   title="حذف من الأرشيف"
@@ -5044,7 +5749,7 @@ export default function App() {
                                           return t;
                                         });
                                         setTransactions(updatedTxs);
-                                        alert('✅ تم اعتماد التحويل البنكي وتأكيد السداد!');
+                                        triggerAlert('✅ تم اعتماد التحويل البنكي وتأكيد السداد!');
                                       }}
                                       className="bg-indigo-650 hover:bg-indigo-700 text-white px-2 py-1.5 rounded font-extrabold text-[10px] whitespace-nowrap transition-colors"
                                       title="اعتماد الحوالة البنكية وتصفية الديون"
@@ -7785,633 +8490,81 @@ export default function App() {
                             </span>
                           </div>
                         </div>
+                      </div>
+                    </div>
 
                         <div className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-lg text-[10px] text-indigo-800">
                           <strong>سياسة الاستدعاء المجدول:</strong> يتفادى المجدول تكرار إرسال التذكيرات لنفس المعاملة والحالة الإجرائية نهائياً لضمان عدم إزعاج العميل وبث أعلى درجات الموثوقية بالمنظومة.
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Task Execution Logs & Audit Trail */}
-                    <div className="space-y-3 bg-slate-50/75 p-5 border border-slate-200/60 rounded-xl flex flex-col justify-between">
-                      <div>
-                        <span className="text-xs font-black text-slate-800 block mb-2">سجلات الفحص الإجرائي والأداء التلقائي (Audit Trail):</span>
-                        
-                        <div className="overflow-y-auto max-h-[145px] pr-1 space-y-2 text-[10px] scrollbar-thin">
-                          {schedulerLogs.map((item, index) => (
-                            <div key={item.id} className="bg-white border border-slate-150 p-2 rounded-lg space-y-1 font-mono hover:border-slate-300 transition-colors">
-                              <div className="flex justify-between items-center text-slate-400">
-                                <span>#دورة رقم {schedulerLogs.length - index}</span>
-                                <span>{new Date(item.runAt).toLocaleTimeString()}</span>
-                              </div>
-                              <div className="flex justify-between text-slate-700 font-sans">
-                                <span className="font-sans text-slate-500 font-bold">المشمول للفحص:</span>
-                                <strong>{item.checkedCount} طلبات</strong>
-                              </div>
-                              <div className="flex justify-between text-slate-700 font-sans">
-                                <span className="font-sans text-slate-500 font-bold">المجاوز للوقت ولم يُذكّر:</span>
-                                <strong className={item.processingOverdueCount > 0 ? 'text-amber-700 font-bold font-mono' : 'font-mono'}>
-                                  {item.processingOverdueCount} طلبات
-                                </strong>
-                              </div>
-                              <div className="flex justify-between text-slate-700 border-t border-dashed border-slate-100 pt-1 mt-1 font-sans">
-                                <span className="font-sans text-slate-500 font-bold">إشعارات التذكير الصادرة:</span>
-                                <span className={`font-mono font-bold px-1.5 py-0.2 rounded ${item.remindersSentCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-slate-400'}`}>
-                                  {item.remindersSentCount} إشعارات
-                                </span>
-                              </div>
-                              {item.triggeredBookings && item.triggeredBookings.length > 0 && (
-                                <div className="pt-1 mt-1 border-t border-slate-150 text-[9px] text-indigo-700 leading-normal font-sans bg-indigo-50/40 p-1.5 rounded">
-                                  <strong>العملاء المذكَّرون:</strong>
-                                  <ul className="list-disc list-inside mt-0.5 space-y-0.5 pr-1">
-                                    {item.triggeredBookings.map((tb: any, subIdx: number) => (
-                                      <li key={tb.bookingId || subIdx} className="truncate">
-                                        {tb.clientName} (معاملة رقمه {tb.bookingId})
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-
-                          {schedulerLogs.length === 0 && (
-                            <div className="h-full flex flex-col items-center justify-center text-slate-400 text-center py-6 font-sans">
-                              <RefreshCw className="w-5 h-5 mb-2 text-slate-300 animate-spin" />
-                              <span>في انتظار بدء أول فحص إلكتروني مجدول تلقائياً في الخلفية...</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* TEMPLATE CUSTOMIZATION SECTION */}
-                <div className="bg-slate-50/50 p-6 rounded-2xl border border-slate-200/80 space-y-6">
-                  <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-                    <div className="bg-emerald-500/10 p-2 rounded-xl text-emerald-600 border border-emerald-500/20">
-                      <MessageSquare className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-slate-900 text-base">تخصيص قوالب الرسائل التلقائية وحقول الدمج الديناميكية</h4>
-                      <p className="text-slate-500 text-xs mt-0.5">خصص صياغة إشعارات الواتساب لكل حالة وحافط على تفاعل عملائك بذكاء من خلال المتغيرات التلقائية.</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    
-                    {/* Template Pending Editing Card */}
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-center border-b border-indigo-100 pb-3">
-                        <h5 className="font-extrabold text-sm text-indigo-950 flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                          <span>قالب إشعار: قيد الانتظار الإداري</span>
-                        </h5>
-                        <span className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold">Pending</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
-                        <textarea
-                          value={whatsappTemplatePending}
-                          onChange={(e) => setWhatsappTemplatePending(e.target.value)}
-                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 leading-relaxed font-sans h-28"
-                          placeholder="اكتب رسالة قيد الانتظار..."
-                        />
-                      </div>
-
-                      {/* Clickable Quick Insert Tokens */}
-                      <div className="space-y-1 pt-1">
-                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplatePending(p => p + ' {clientName}')}
-                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم العميل"
-                          >
-                            {"{clientName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplatePending(p => p + ' {serviceName}')}
-                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم الخدمة"
-                          >
-                            {"{serviceName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplatePending(p => p + ' {bookingId}')}
-                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج رقم المعاملة"
-                          >
-                            {"{bookingId}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplatePending(p => p + ' {status}')}
-                            className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج حالة الطلب الفعلي"
-                          >
-                            {"{status}"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Pre-computation of real time preview with a dummy user */}
-                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
-                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
-                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
-                          {whatsappTemplatePending
-                            .replace(/{name}/g, 'ريما بنت أحمد العسيري')
-                            .replace(/{clientName}/g, 'ريما بنت أحمد العسيري')
-                            .replace(/{service}/g, 'تفويض تأشيرة الكتروني')
-                            .replace(/{serviceName}/g, 'تفويض تأشيرة الكتروني')
-                            .replace(/{status}/g, 'قيد المراجعة والتدقيق الإداري والمحاسبي')
-                            .replace(/{phone}/g, '0567891234')
-                            .replace(/{bookingId}/g, 'REQ-10492')
-                          }
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Template Processing Editing Card */}
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-center border-b border-amber-100 pb-3">
-                        <h5 className="font-extrabold text-sm text-amber-950 flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
-                          <span>قالب إشعار: قيد معالجة المعاملة</span>
-                        </h5>
-                        <span className="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded font-mono font-bold">Processing</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
-                        <textarea
-                          value={whatsappTemplateProcessing}
-                          onChange={(e) => setWhatsappTemplateProcessing(e.target.value)}
-                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-600 leading-relaxed font-sans h-28"
-                          placeholder="اكتب رسالة قيد المعالجة..."
-                        />
-                      </div>
-
-                      {/* Clickable Quick Insert Tokens */}
-                      <div className="space-y-1 pt-1">
-                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {clientName}')}
-                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم العميل"
-                          >
-                            {"{clientName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {serviceName}')}
-                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم الخدمة"
-                          >
-                            {"{serviceName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {bookingId}')}
-                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج رقم المعاملة"
-                          >
-                            {"{bookingId}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateProcessing(p => p + ' {status}')}
-                            className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج حالة الطلب الفعلي"
-                          >
-                            {"{status}"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Pre-computation of real time preview with a dummy user */}
-                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
-                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
-                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
-                          {whatsappTemplateProcessing
-                            .replace(/{name}/g, 'خالد محمد الشهراني')
-                            .replace(/{clientName}/g, 'خالد محمد الشهراني')
-                            .replace(/{service}/g, 'تمديد تأشيرة زيارة')
-                            .replace(/{serviceName}/g, 'تمديد تأشيرة زيارة')
-                            .replace(/{status}/g, 'تحت المعالجة الإجرائية من قبل فريق المراجعين')
-                            .replace(/{phone}/g, '0502468135')
-                            .replace(/{bookingId}/g, 'REQ-29401')
-                          }
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Template Completed Editing Card */}
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-center border-b border-emerald-100 pb-3">
-                        <h5 className="font-extrabold text-sm text-emerald-950 flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                          <span>قالب إشعار: اكتمال المعاملة والطلب</span>
-                        </h5>
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-mono font-bold">Completed</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
-                        <textarea
-                          value={whatsappTemplateCompleted}
-                          onChange={(e) => setWhatsappTemplateCompleted(e.target.value)}
-                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 leading-relaxed font-sans h-28"
-                          placeholder="اكتب رسالة طلب مكتمل..."
-                        />
-                      </div>
-
-                      {/* Clickable Quick Insert Tokens */}
-                      <div className="space-y-1 pt-1">
-                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {clientName}')}
-                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم العميل"
-                          >
-                            {"{clientName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {serviceName}')}
-                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم الخدمة"
-                          >
-                            {"{serviceName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {bookingId}')}
-                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج رقم المعاملة"
-                          >
-                            {"{bookingId}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCompleted(p => p + ' {status}')}
-                            className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج حالة الطلب الفعلي"
-                          >
-                            {"{status}"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Pre-computation of real time preview with a dummy user */}
-                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
-                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
-                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
-                          {whatsappTemplateCompleted
-                            .replace(/{name}/g, 'عبد الرحمن سفيان الحركان')
-                            .replace(/{clientName}/g, 'عبد الرحمن سفيان الحركان')
-                            .replace(/{service}/g, 'تأشيرة عمل مهندس')
-                            .replace(/{serviceName}/g, 'تأشيرة عمل مهندس')
-                            .replace(/{status}/g, 'مكتملة ومستحقة الدفع')
-                            .replace(/{phone}/g, '0501234567')
-                            .replace(/{bookingId}/g, 'REQ-48192')
-                          }
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Template Cancelled Editing Card */}
-                    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-center border-b border-red-100 pb-3">
-                        <h5 className="font-extrabold text-sm text-red-950 flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-                          <span>قالب إشعار: إلغاء المعاملة والطلب</span>
-                        </h5>
-                        <span className="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded font-mono font-bold">Cancelled</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-slate-700 text-xs font-bold">صياغة نص الرسالة:</label>
-                        <textarea
-                          value={whatsappTemplateCancelled}
-                          onChange={(e) => setWhatsappTemplateCancelled(e.target.value)}
-                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-red-600 focus:ring-1 focus:ring-red-600 leading-relaxed font-sans h-28"
-                          placeholder="اكتب رسالة تم الإلغاء..."
-                        />
-                      </div>
-
-                      {/* Clickable Quick Insert Tokens */}
-                      <div className="space-y-1 pt-1">
-                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {clientName}')}
-                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم العميل"
-                          >
-                            {"{clientName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {serviceName}')}
-                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج اسم الخدمة"
-                          >
-                            {"{serviceName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {bookingId}')}
-                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج رقم المعاملة"
-                          >
-                            {"{bookingId}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateCancelled(p => p + ' {status}')}
-                            className="text-[9px] bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 px-2 py-1 rounded font-mono font-bold transition-all"
-                            title="إدراج حالة الطلب الفعلي"
-                          >
-                            {"{status}"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Pre-computation of real time preview with a dummy user */}
-                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
-                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للمحتوى الصادر:</span>
-                        <p className="text-slate-700 italic pr-3 border-r-2 border-slate-350">
-                          {whatsappTemplateCancelled
-                            .replace(/{name}/g, 'سارة بنت حمود الطويرقي')
-                            .replace(/{clientName}/g, 'سارة بنت حمود الطويرقي')
-                            .replace(/{service}/g, 'تأشيرة زيارة عائلية')
-                            .replace(/{serviceName}/g, 'تأشيرة زيارة عائلية')
-                            .replace(/{status}/g, 'ملغية ومسحوبة')
-                            .replace(/{phone}/g, '0559876543')
-                            .replace(/{bookingId}/g, 'REQ-38291')
-                          }
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Template Reminder Processing Editing Card */}
-                    <div className="bg-white p-5 rounded-2xl border border-indigo-150 shadow-sm space-y-4 hover:shadow-md transition-shadow relative overflow-hidden">
-                      {/* Premium indicator banner for automated task template */}
-                      <div className="absolute top-0 right-0 left-0 h-1 bg-violet-600"></div>
-
-                      <div className="flex justify-between items-center border-b border-violet-100 pb-3">
-                        <h5 className="font-extrabold text-sm text-violet-950 flex items-center gap-1.5">
-                          <span className="w-2.5 h-2.5 rounded-full bg-violet-500 animate-pulse"></span>
-                          <span>قالب تلويح تذكيري للتأخر الإجرائي</span>
-                        </h5>
-                        <span className="text-[10px] bg-violet-50 text-violet-700 px-2 py-0.5 rounded font-mono font-bold">Auto-Reminder</span>
-                      </div>
-
-                      <div className="space-y-1">
-                        <label className="block text-slate-700 text-xs font-bold">صياغة نص رسالة التذكير التلقائية (بالواتساب):</label>
-                        <textarea
-                          value={whatsappTemplateReminderProcessing}
-                          onChange={(e) => setWhatsappTemplateReminderProcessing(e.target.value)}
-                          className="w-full text-xs p-3 border border-slate-200 rounded-lg focus:outline-none focus:border-violet-600 focus:ring-1 focus:ring-violet-600 leading-relaxed font-sans h-28"
-                          placeholder="اكتب صياغة نص تذكير المعاملات المتأخرة..."
-                        />
-                      </div>
-
-                      {/* Clickable Quick Insert Tokens */}
-                      <div className="space-y-1 pt-1">
-                        <span className="block text-[10px] text-slate-400 font-bold">انقر فوق المتغير لإدراجه تلقائياً بالنص:</span>
-                        <div className="flex flex-wrap gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateReminderProcessing(p => p + ' {clientName}')}
-                            className="text-[9px] bg-violet-50 text-violet-800 border border-violet-200 hover:bg-violet-100 px-2 py-1 rounded font-mono font-bold transition-all cursor-pointer"
-                            title="إدراج اسم العميل"
-                          >
-                            {"{clientName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateReminderProcessing(p => p + ' {serviceName}')}
-                            className="text-[9px] bg-violet-50 text-violet-800 border border-violet-200 hover:bg-violet-100 px-2 py-1 rounded font-mono font-bold transition-all cursor-pointer"
-                            title="إدراج اسم الخدمة"
-                          >
-                            {"{serviceName}"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setWhatsappTemplateReminderProcessing(p => p + ' {bookingId}')}
-                            className="text-[9px] bg-violet-50 text-violet-800 border border-violet-200 hover:bg-violet-100 px-2 py-1 rounded font-mono font-bold transition-all cursor-pointer"
-                            title="إدراج رقم المعاملة"
-                          >
-                            {"{bookingId}"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Pre-computation of real time preview with a dummy user */}
-                      <div className="bg-slate-50 border border-slate-150 rounded-xl p-3 text-xs leading-normal">
-                        <span className="font-extrabold text-[10px] text-slate-500 block mb-1">🔍 معاينة حية للتذكير الصادر:</span>
-                        <p className="text-slate-700 italic pr-3 border-r-2 border-violet-300 bg-violet-50/20 p-1.5 rounded-lg">
-                          {whatsappTemplateReminderProcessing
-                            .replace(/{name}/g, 'خالصة بنت عيسى الوهيبي')
-                            .replace(/{clientName}/g, 'خالصة بنت عيسى الوهيبي')
-                            .replace(/{service}/g, 'إصدار رخصة بلدي بلدية')
-                            .replace(/{serviceName}/g, 'إصدار رخصة بلدي بلدية')
-                            .replace(/{status}/g, 'تحت المعالجة الإجرائية من قبل فريق المراجعين والمتابعة الخارجية')
-                            .replace(/{phone}/g, '0543210987')
-                            .replace(/{bookingId}/g, 'REQ-50983')
-                          }
-                        </p>
-                      </div>
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* TOKENS CHEAT SHEET & RESET BUTTONS */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
-                  <div>
-                    <span className="font-extrabold text-slate-900 block mb-2">🏷️ رموز الاختصارات المدعومة داخل القوالب:</span>
-                    <div className="flex flex-wrap gap-2 text-[10px] font-mono">
-                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="الاسم الكامل للعميل">{"{clientName}"} أو {"{name}"} : اسم العميل</span>
-                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="اسم الخدمة المختارة">{"{serviceName}"} أو {"{service}"} : نوع الخدمة</span>
-                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="رقم جوال المستفيد">{"{phone}"} : رقم الجوال</span>
-                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="توصيف حالة الطلب">{"{status}"} : وصف الحالة</span>
-                      <span className="bg-indigo-50 border border-indigo-150 text-indigo-700 px-2.5 py-1 rounded" title="رقم المعاملة الفريد">{"{bookingId}"} : رقم المعاملة</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex gap-2 w-full md:w-auto self-end">
+                                          <div className="flex gap-2 w-full md:w-auto self-end">
                     <button
                       type="button"
                       onClick={() => {
                         setWhatsappTemplateCompleted('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {name} المحترم. يسعدنا إبلاغكم بأن معاملتكم لطلب ({service}) قد اكتملت بنجاح ومستند الفاتورة جاهز. شكراً لثقتكم بمكتب سما المملكة للخدمات المتكاملة.');
                         setWhatsappTemplateCancelled('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {name} المحترم. نود إبلاغكم بأنه تم إلغاء معاملتكم رقم {bookingId} لطلب ({service}). لمزيد من الاستفسارات يرجى الاتصال بإدارة المكتب. شكراً لتفهمكم.');
                         setWhatsappTemplateProcessing('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. نود إبلاغكم بأن طلبكم رقم {bookingId} لمعاملة ({serviceName}) هو الآن قيد المعالجة الإجرائية من قبل فريق المراجعة والجهات المختصة. سنوافيكم بالتطورات قريباً.');
-                        setWhatsappTemplatePending('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. تم استلام طلبكم رقم {bookingId} لمعاملة ({serviceName}) بنجاح. وهو قيد الانتظار حالياً للمراجعة والتدقيق الإداري. شكراً لثقتكم بمكتب سما المملكة.');
-                        setWhatsappTemplateReminderProcessing('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. نود إحاطتكم بأن طلبكم رقم {bookingId} لمعاملة ({serviceName}) لا يزال قيد المعالجة الإجرائية من قبل فريق المراجعين والمتابعة مع الجهات المختصة لإنهاء المعاملة وتيسير إجرائها بأسرع وقت ممكن. نحن نسعى دائماً لخدمتكم وتسريع معاملاتكم. شكراً لثقتكم بمكتب سما المملكة.');
-                        setSaveSuccessWaTemplate(true);
-                        setTimeout(() => setSaveSuccessWaTemplate(false), 3000);
+                        setWhatsappTemplatePending('السلام عليكم ورحمة الله وبركاته، الأخ/الأخت {clientName} المحترم. تم استلام طلبكم رقم {bookingId} لمعاملة ({serviceName}) بنجاح. وهو قيد الانتظار حالياً للمراجعة والتدقيق الإداري من قبل هيئة مكتب سما المملكة الموحد.');
+                        setWhatsappTemplateReminderProcessing('عزيزنا العميل {clientName}، هذا تذكير ودي من مكتب سما المملكة بأن معاملتكم رقم {bookingId} للخدمة ({serviceName}) في حالة ({status}) وتحت المتابعة الفعالة.');
+                        triggerAlert('🔄 تم إعادة تعيين كافة قوالب الرسائل الإشعارية للقيم الافتراضية القياسية.');
                       }}
-                      className="px-3 border border-slate-300 text-slate-800 font-bold py-2 bg-white hover:bg-slate-100 rounded-xl transition text-xs flex-1 md:flex-initial cursor-pointer"
+                      className="px-4 py-2 bg-slate-900 border border-slate-950 text-amber-500 hover:bg-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
                     >
-                      استعادة الافتراضي
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSaveSuccessWaTemplate(true);
-                        setTimeout(() => setSaveSuccessWaTemplate(false), 3000);
-                      }}
-                      className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-500 font-black rounded-xl border border-slate-700 transition shadow text-xs flex items-center justify-center gap-1.5 flex-1 md:flex-initial"
-                    >
-                      {saveSuccessWaTemplate ? (
-                        <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                          <span className="text-emerald-400">تم حفظ القوالب بنجاح!</span>
-                        </>
-                      ) : (
-                        <span>حفظ التعديلات والتخصيص</span>
-                      )}
+                      🔄 استعادة صياغة القوالب الافتراضية
                     </button>
                   </div>
                 </div>
+              </div>
+            </div>
 
-                {/* LIVE DYNAMIC TEST CONSOLE SECTION */}
-                <div className="bg-gradient-to-l from-slate-900 to-slate-850 p-6 rounded-xl text-white shadow-xl border border-slate-800 space-y-4">
-                  <div>
-                    <h3 className="font-extrabold text-amber-500 text-sm flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span>بوابة الاختبار والتحقق التلقائي المباشر (Simulator Dispatch Console)</span>
-                    </h3>
-                    <p className="text-slate-400 text-xs mt-1 font-sans">
-                      اختبر بث البوابة الرقمية في أي وقت! اختر معاملة من المعاملات النشطة بالنظام ثم حدد حالة الإرسال للبث لترى النتيجة الصادرة والـ Response الآتي من Gateway API بصورة واقعية.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                {/* WHATSAPP COMMUNICATIONS LOGS LISTING */}
+                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-2 border-b border-slate-100 text-right">
                     <div>
-                      <label className="block text-slate-300 font-bold mb-1.5 text-xs">١. اختر معاملة مرجعية للفحص:</label>
-                      <select
-                        value={testConsoleBookingId}
-                        onChange={(e) => setTestConsoleBookingId(e.target.value)}
-                        className="w-full p-2.5 bg-slate-950 text-slate-100 border border-slate-750 rounded-xl focus:outline-none focus:border-amber-500 text-xs"
-                      >
-                        {bookings.map(b => (
-                          <option key={b.id} value={b.id}>
-                            {b.clientName} ({b.serviceName}) - {b.phoneNumber}
-                          </option>
-                        ))}
-                        {bookings.length === 0 && (
-                          <option value="">لا يوجد أي معاملات متاحة للتجربة</option>
-                        )}
-                      </select>
+                      <h4 className="font-extrabold text-slate-900 text-sm">سجل تسليم وبث رسائل الـ WhatsApp التلقائية</h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">تتبع أداء بوابة الواتساب، والتحقق من محتوى الرسائل وتفاصيل الاستجابة القادمة من المزود.</p>
                     </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-bold mb-1.5 text-xs">٢. اختر حالة البث المنشودة:</label>
-                      <select
-                        value={testConsoleTemplateType}
-                        onChange={(e) => setTestConsoleTemplateType(e.target.value as any)}
-                        className="w-full p-2.5 bg-slate-950 text-slate-100 border border-slate-750 rounded-xl focus:outline-none focus:border-amber-500 text-xs"
-                      >
-                        <option value="pending">قيد الانتظار الإداري (Pending Template)</option>
-                        <option value="processing">قيد معالجة المعاملة (Processing Template)</option>
-                        <option value="completed">اكتمال وتهيئة الفاتورة (Completed Template)</option>
-                        <option value="cancelled">إلغاء المعاملة (Cancelled Template)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <button
-                        type="button"
-                        onClick={handleManualTestWaDispatch}
-                        disabled={testConsoleIsDispatching || !testConsoleBookingId}
-                        className="w-full p-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black rounded-xl transition text-xs flex items-center justify-center gap-2 shadow disabled:bg-slate-700 disabled:text-slate-400"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>{testConsoleIsDispatching ? 'جاري بث الإجراء للبوابة...' : 'بث واختبار الإرسال الإلكتروني الآن'}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* HISTORICAL TRANSMISSION LOGS */}
-                <div className="bg-white p-6 rounded-xl shadow border border-slate-200">
-                  <div className="border-b border-slate-100 pb-3 mb-4 flex justify-between items-center flex-wrap gap-2">
-                    <div>
-                      <h4 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
-                        <Activity className="w-4 h-4 text-emerald-600" />
-                        <span>سجل بث وتوصيل إشعارات WhatsApp (تتبع البوابة)</span>
-                      </h4>
-                      <p className="text-[11px] text-slate-400">ملخص بكافة المعاملات الصادرة عبر بوابتنا الحسابية الافتراضية مع الحالة المرجعية للبث.</p>
-                    </div>
-                    
                     <button
                       type="button"
                       onClick={() => {
-                        if (window.confirm('هل تريد مسح سجل الإشعارات نهائياً؟')) {
+                        if (window.confirm('🚨 هل أنت متأكد من رغبتك في تفريغ سجل إشعارات الواتساب بالكامل؟ لا يمكن تراجع عن هذا الإجراء.')) {
                           setWhatsappLogs([]);
+                          localStorage.setItem('sm_wa_logs', JSON.stringify([]));
+                          triggerAlert('🗑️ تم إفراغ سجل بث إشعارات الواتساب بالكامل بنجاح.');
                         }
                       }}
-                      className="text-xs text-red-600 hover:text-red-700 font-bold"
                       disabled={whatsappLogs.length === 0}
+                      className="px-3.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 disabled:opacity-50 disabled:pointer-events-none rounded-xl text-[10px] font-bold transition-all border border-red-200 cursor-pointer flex items-center gap-1"
                     >
-                      مسح سجل البث الكلي
+                      <Trash2 className="w-3.5 h-3.5 text-red-650" />
+                      <span>تطهير سجل الرسائل بالكامل</span>
                     </button>
                   </div>
 
                   {whatsappLogs.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 border-2 border-dashed border-slate-200 bg-slate-50 rounded-xl">
-                      <MessageSquare className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                      <p className="text-xs font-bold text-slate-500">سجل الإشعارات فارغ تماماً حالياً</p>
-                      <p className="text-[10px] text-slate-400 mt-1">قم بتغيير حالة المستند لأي معاملة بالبوابة إلى مكتمل أو ملغى، أو اضغط على إرسال تجريبي في شريط الاختيار بالأعلى.</p>
+                    <div className="p-8 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50">
+                      لا يوجد نشاط مسجل في بث الإشعارات للعملاء حالياً.
                     </div>
                   ) : (
-                    <div className="overflow-x-auto border border-slate-150 rounded-lg">
+                    <div className="overflow-x-auto border border-slate-200 rounded-lg">
                       <table className="w-full text-right text-xs">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                            <th className="p-3 text-right">رقم البث / المستفيد</th>
-                            <th className="p-3 text-right">المعاملة المستهدفة</th>
-                            <th className="p-3 text-right">محتوى الرسالة الصادرة</th>
-                            <th className="p-3 text-right">تاريخ وتوقيت الإرسال</th>
-                            <th className="p-3 text-center">حالة العملية</th>
-                            <th className="p-3 text-center">بوابة استجابة المطور (API)</th>
+                            <th className="p-3">رقم المعاملة</th>
+                            <th className="p-3">المستلم والوجهة</th>
+                            <th className="p-3">صيغة ونص الرسالة</th>
+                            <th className="p-3 text-center">حالة التسليم</th>
+                            <th className="p-3 text-center">بوابة الاستجابة</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                          {whatsappLogs.map((log) => (
-                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-3 font-sans">
-                                <div className="font-bold text-slate-850 flex items-center gap-1.5">
-                                  <Smartphone className="w-3.5 h-3.5 text-slate-400" />
-                                  <span>{log.clientName}</span>
-                                </div>
-                                <span className="text-[10px] font-mono text-slate-500 block mt-0.5">{log.phoneNumber}</span>
+                        <tbody className="divide-y divide-slate-150">
+                          {whatsappLogs.slice().reverse().map((log) => (
+                            <tr key={log.id} className="hover:bg-slate-50/50">
+                              <td className="p-3 font-mono text-slate-800 text-right">{log.bookingId || 'غير محدد'}</td>
+                              <td className="p-3 text-right">
+                                <div className="font-extrabold text-slate-900">{log.clientName}</div>
+                                <div className="text-[10px] text-slate-400 font-mono">{log.phone}</div>
                               </td>
-                              
-                              <td className="p-3 font-sans">
-                                <span className="font-bold text-slate-800">{log.serviceName}</span>
-                                <div className="text-[10px] mt-0.5 flex items-center gap-1">
-                                  <span className={`w-1.5 h-1.5 rounded-full ${log.status === 'completed' ? 'bg-emerald-500' : 'bg-red-500'}`}></span>
-                                  <span>{log.status === 'completed' ? 'تحديث: مكتمل' : 'تحديث: ملغى'}</span>
-                                </div>
-                              </td>
-
-                              <td className="p-3 max-w-[280px]">
-                                <div className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded border border-slate-150 font-sans leading-relaxed line-clamp-3 hover:line-clamp-none cursor-help transition-all" title={log.message}>
+                              <td className="p-3 text-right">
+                                <div className="border border-slate-150 font-sans leading-relaxed line-clamp-3 hover:line-clamp-none cursor-help transition-all" title={log.message}>
                                   {log.message}
                                 </div>
                               </td>
@@ -8795,10 +8948,10 @@ export default function App() {
                           <textarea 
                             rows={3}
                             required
-                            placeholder="تحدث بالتفصيل عن واجبات ومسؤوليات الموظف المقترح في مكتب سما المملكة..."
+                            placeholder="تحدث بالتفصيل عن واجبات ومسؤوليات الموظف الإداري المقترح في مكتب سما المملكة..."
                             value={adminJobDescription}
                             onChange={(e) => setAdminJobDescription(e.target.value)}
-                            className="w-full text-xs border border-slate-2.5 border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right leading-relaxed"
+                            className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right leading-relaxed h-28"
                           />
                         </div>
 
@@ -8806,10 +8959,7 @@ export default function App() {
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">المهارات والخبرات المطلوبة للقبول (اكتب كل بند في سطر مستقل)</label>
                           <textarea 
                             rows={4}
-                            placeholder="مثال:
-إتقان استخدام بوابة جدارة وأبشر أعمال ومقيم
-خبرة لا تقل عن سنتين في تعقيب المكاتب والهيئات الحكومية
-امتلاك سيارة ورخصة قيادة سارية المفعول بالمملكة"
+                            placeholder="مثال:\nإتقان استخدام بوابة جدارة وأبشر أعمال ومقيم\nخبرة لا تقل عن سنتين في تعقيب المكاتب والهيئات الحكومية\nامتلاك سيارة ورخصة قيادة سارية المفعول بالمملكة"
                             value={adminJobRequirements}
                             onChange={(e) => setAdminJobRequirements(e.target.value)}
                             className="w-full text-xs border border-slate-250 p-2.5 rounded-xl bg-white focus:outline-hidden focus:border-amber-500 text-right font-sans"
@@ -8891,7 +9041,7 @@ export default function App() {
                                             setAdminJobType(j.type);
                                             setAdminJobSalary(j.salary);
                                             setAdminJobDescription(j.description);
-                                            setAdminJobRequirements(j.requirements.join('\n'));
+                                            setAdminJobRequirements(j.requirements.join('\\n'));
                                           }}
                                           className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold transition-all border border-slate-200 cursor-pointer"
                                         >
@@ -9294,6 +9444,794 @@ export default function App() {
                   </div>
                 )}
 
+            {adminTab === 'contacts' && (
+              <div className="space-y-6 animate-fade-in font-sans text-right animate-fill-both" dir="rtl">
+                {/* Ticketing Metrics Board (Bento Cards) */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Total Inquiries */}
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">إجمالي التذاكر والطلبات</p>
+                      <h4 className="text-2xl font-black text-slate-900">{contactInquiries.length}</h4>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <MessageSquare className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  {/* New Status */}
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-extrabold text-rose-600 uppercase tracking-wider">جديدة قيد الانتظار</p>
+                      <h4 className="text-2xl font-black text-rose-600">
+                        {contactInquiries.filter(i => (i.status || 'new') === 'new').length}
+                      </h4>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100 relative">
+                      <span className="absolute top-1 right-1 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                      </span>
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                  </div>
+
+                  {/* Processing Status */}
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-extrabold text-amber-600 uppercase tracking-wider">قيد المراجعة والمعالجة</p>
+                      <h4 className="text-2xl font-black text-amber-600">
+                        {contactInquiries.filter(i => i.status === 'processing').length}
+                      </h4>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+                      <Clock className="w-5 h-5 text-amber-500" />
+                    </div>
+                  </div>
+
+                  {/* Answered Status */}
+                  <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex items-center justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">تم الرد ومكتملة</p>
+                      <h4 className="text-2xl font-black text-emerald-600">
+                        {contactInquiries.filter(i => i.status === 'resolved').length}
+                      </h4>
+                    </div>
+                    <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Configuration: Custom Signature & Action Bar */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
+                    <span className="text-xs font-extrabold text-slate-700 whitespace-nowrap">✍️ اسم الموظف الموقّع للتعليقات:</span>
+                    <input
+                      type="text"
+                      value={adminAuthorName}
+                      onChange={(e) => setAdminAuthorName(e.target.value)}
+                      placeholder="امسح واكتب اسمك أو المنصب القانوني"
+                      className="px-3 py-1.5 bg-white border border-slate-250 rounded-lg text-xs font-bold w-64 focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-slate-900 border-slate-300"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('🚨 تحذير: هل أنت متأكد من رغبتك في حذف وتصفير أرشيف التذاكر بالكامل؟ لا يمكن استرجاع هذه البيانات بعد ذلك.')) {
+                        setContactInquiries([]);
+                        localStorage.setItem('sm_contact_inquiries', JSON.stringify([]));
+                        triggerAlert('🗑️ تم تفريغ وحذف سجل استفسارات العملاء وأرشيف التذاكر بالكامل.');
+                      }
+                    }}
+                    disabled={contactInquiries.length === 0}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 hover:text-red-800 disabled:opacity-50 disabled:pointer-events-none rounded-lg text-xs font-bold transition-all border border-red-200 cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                    <span>تصفير مركز التذاكر بالكامل</span>
+                  </button>
+                </div>
+
+                {/* Filters Row */}
+                <div className="bg-white p-5 rounded-xl shadow-md border border-slate-200 space-y-4">
+                  <div className="flex flex-col lg:flex-row gap-4 justify-between items-stretch lg:items-center pb-2 border-b border-slate-100">
+                    {/* Status Tabs */}
+                    <div className="flex flex-wrap gap-1 bg-slate-100 p-1.5 rounded-lg w-fit">
+                      <button
+                        onClick={() => setTicketStatusFilter('all')}
+                        className={`px-3.5 py-1.5 rounded-md text-xs font-extrabold transition-all ${
+                          ticketStatusFilter === 'all'
+                            ? 'bg-white text-slate-900 shadow-sm border border-slate-200'
+                            : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        الكل ({contactInquiries.length})
+                      </button>
+                      <button
+                        onClick={() => setTicketStatusFilter('new')}
+                        className={`px-3.5 py-1.5 rounded-md text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                          ticketStatusFilter === 'new'
+                            ? 'bg-rose-600 text-white shadow-sm'
+                            : 'text-rose-600 hover:bg-rose-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                        جديد ({contactInquiries.filter(i => (i.status || 'new') === 'new').length})
+                      </button>
+                      <button
+                        onClick={() => setTicketStatusFilter('processing')}
+                        className={`px-3.5 py-1.5 rounded-md text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                          ticketStatusFilter === 'processing'
+                            ? 'bg-amber-500 text-slate-950 shadow-sm'
+                            : 'text-amber-700 hover:bg-amber-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        قيد المعالجة ({contactInquiries.filter(i => i.status === 'processing').length})
+                      </button>
+                      <button
+                        onClick={() => setTicketStatusFilter('resolved')}
+                        className={`px-3.5 py-1.5 rounded-md text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                          ticketStatusFilter === 'resolved'
+                            ? 'bg-emerald-600 text-white shadow-sm'
+                            : 'text-emerald-700 hover:bg-emerald-50'
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        تم الرد ({contactInquiries.filter(i => i.status === 'resolved').length})
+                      </button>
+                    </div>
+
+                    {/* Search Field */}
+                    <div className="relative w-full lg:w-80">
+                      <span className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                        <Search className="h-4 w-4 text-slate-400" />
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="ابحث باسم المرسل، البريد، أو تفاصيل التذكرة..."
+                        value={contactSearchText}
+                        onChange={(e) => setContactSearchText(e.target.value)}
+                        className="pl-3 pr-9 py-2 w-full bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all text-slate-900 placeholder:text-slate-400"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Filtered Tickets Output */}
+                  {(() => {
+                    const filtered = contactInquiries.filter(item => {
+                      const q = contactSearchText.toLowerCase();
+                      const matchesSearch = (
+                        item.name.toLowerCase().includes(q) ||
+                        item.email.toLowerCase().includes(q) ||
+                        item.subject.toLowerCase().includes(q) ||
+                        item.message.toLowerCase().includes(q)
+                      );
+                      const currentStatus = item.status || 'new';
+                      const matchesStatus = ticketStatusFilter === 'all' || currentStatus === ticketStatusFilter;
+                      return matchesSearch && matchesStatus;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="text-center py-12 border border-dashed border-slate-200 rounded-xl space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-slate-50 text-slate-400 flex items-center justify-center mx-auto border border-slate-100">
+                            <HelpCircle className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800">لا توجد تذاكر تواصل تطابق الفرز الحالي</p>
+                            <p className="text-xs text-slate-400 mt-1">امسح حقل البحث أو حدد فئة تصنيف أخرى من علامات التبويب في الأعلى.</p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-6">
+                        {filtered.map((item) => {
+                          const currentStatus = item.status || 'new';
+                          return (
+                            <div
+                              key={item.id}
+                              className={`rounded-xl border p-5 transition-all space-y-4 ${
+                                currentStatus === 'resolved'
+                                  ? 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                                  : currentStatus === 'processing'
+                                  ? 'bg-amber-50/15 border-amber-200 shadow-sm hover:border-amber-300'
+                                  : 'bg-rose-50/10 border-rose-150 shadow hover:border-rose-300'
+                              }`}
+                            >
+                              {/* Ticket Header */}
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-dashed border-slate-200 pb-3">
+                                <div className="flex items-center gap-2">
+                                  {/* Ticket ID Tag */}
+                                  <span className="font-mono text-xs font-black px-2.5 py-1 bg-slate-900 text-slate-100 rounded-lg">
+                                    #TKT-{item.id.replace('inq-', '')}
+                                  </span>
+                                  {/* Status Indicator */}
+                                  {currentStatus === 'new' && (
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping"></span>
+                                      جديد قيد المتابعة
+                                    </span>
+                                  )}
+                                  {currentStatus === 'processing' && (
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                      <Clock className="w-3 h-3 text-amber-600 animate-spin" />
+                                      قيد المعالجة الإدارية
+                                    </span>
+                                  )}
+                                  {currentStatus === 'resolved' && (
+                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      تم الرد وحفظ السجل
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="text-[11px] text-slate-500 font-bold flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>تاريخ الورود:</span>
+                                  <span className="font-mono">{new Date(item.createdAt).toLocaleString('ar-SA')}</span>
+                                </div>
+                              </div>
+
+                              {/* Sender Profile details & original message */}
+                              <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 bg-white/80 p-4 rounded-xl border border-slate-150">
+                                <div className="lg:col-span-1 space-y-2 border-l border-dashed border-slate-200 pl-4">
+                                  <div className="space-y-0.5">
+                                    <div className="text-[10px] font-black text-slate-400">اسم صاحب الاستفسار:</div>
+                                    <p className="font-extrabold text-slate-800 text-xs">{item.name}</p>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <div className="text-[10px] font-black text-slate-400">البريد الإلكتروني المرفق:</div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="font-mono text-[10px] text-slate-600 truncate block lowercase" dir="ltr">
+                                        {item.email}
+                                      </span>
+                                      <a
+                                        href={`mailto:${item.email}?subject=RE: ${encodeURIComponent(item.subject)}`}
+                                        title="إجابة بالبريد الإلكتروني"
+                                        className="p-1 bg-blue-50 text-blue-600 rounded-md border border-blue-150 hover:bg-blue-100 transition"
+                                      >
+                                        <Send className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="lg:col-span-3 space-y-2 pr-0 lg:pr-2">
+                                  <div className="space-y-0.5">
+                                    <div className="text-[10px] font-black text-orange-600">عنوان وموضوع تذكرة الاستفسار:</div>
+                                    <h5 className="font-extrabold text-slate-900 text-xs">{item.subject}</h5>
+                                  </div>
+
+                                  <div className="space-y-0.5">
+                                    <div className="text-[10px] font-black text-slate-400">تفاصيل الرسالة المرسلة:</div>
+                                    <blockquote className="bg-slate-50 border-r-4 border-amber-500 p-3 rounded-lg text-[11px] text-slate-600 leading-relaxed font-sans whitespace-pre-wrap text-justify">
+                                      {item.message}
+                                    </blockquote>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Ticketing Status & Admin Controllers */}
+                              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                                  <span className="text-xs font-black text-slate-700 whitespace-nowrap">🎯 تغيير حالة التذكرة:</span>
+                                  {/* Pill switches */}
+                                  <div className="grid grid-cols-3 gap-1 bg-slate-200/60 p-1 rounded-lg w-full sm:w-80">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateContactInquiryStatus(item.id, 'new')}
+                                      className={`py-1 text-[10px] font-extrabold rounded-md transition-all text-center cursor-pointer ${
+                                        currentStatus === 'new'
+                                          ? 'bg-rose-600 text-white shadow'
+                                          : 'text-rose-700 hover:bg-white/50'
+                                      }`}
+                                    >
+                                      جديد
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateContactInquiryStatus(item.id, 'processing')}
+                                      className={`py-1 text-[10px] font-extrabold rounded-md transition-all text-center cursor-pointer ${
+                                        currentStatus === 'processing'
+                                          ? 'bg-amber-500 text-slate-950 shadow'
+                                          : 'text-amber-700 hover:bg-white/50'
+                                      }`}
+                                    >
+                                      قيد المعالجة
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUpdateContactInquiryStatus(item.id, 'resolved')}
+                                      className={`py-1 text-[10px] font-extrabold rounded-md transition-all text-center cursor-pointer ${
+                                        currentStatus === 'resolved'
+                                          ? 'bg-emerald-600 text-white shadow'
+                                          : 'text-emerald-700 hover:bg-white/50'
+                                      }`}
+                                    >
+                                      تم الرد
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (window.confirm('هل تريد حذف هذه التذكرة بالكامل من النظام مع أرشيف تعليقاتها؟')) {
+                                      const updated = contactInquiries.filter(c => c.id !== item.id);
+                                      setContactInquiries(updated);
+                                      localStorage.setItem('sm_contact_inquiries', JSON.stringify(updated));
+                                      triggerAlert('🗑️ تم استبعاد وحذف تذكرة تواصل العميل بنجاح.');
+                                    }
+                                  }}
+                                  className="text-[10px] font-bold text-red-650 hover:text-red-800 bg-red-50 hover:bg-red-100 border border-red-200 py-1.5 px-3 rounded-lg flex items-center gap-1 self-stretch sm:self-auto justify-center"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>مسح التذكرة</span>
+                                </button>
+                              </div>
+
+                              {/* Admin Notes & Comments Thread */}
+                              <div className="bg-slate-100/50 p-4 rounded-xl border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                                  <h6 className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                                    <MessageSquare className="w-4 h-4 text-blue-600" />
+                                    <span>التوجيهات والتعليقات الإدارية الداخليّة ({item.adminComments?.length || 0})</span>
+                                  </h6>
+                                  <span className="text-[9px] text-slate-400 font-bold">لا تظهر للعميل (سجل سري داخلي)</span>
+                                </div>
+
+                                {/* Comments List */}
+                                {(!item.adminComments || item.adminComments.length === 0) ? (
+                                  <p className="text-[10px] text-slate-400 font-bold bg-white p-3 rounded-lg text-center border border-dashed border-slate-250">
+                                    لا توجد توجيهات أو تعليقات إدارية مسجلة على هذا الطلب حتى الآن. اكتب تعليقاً في الأسفل للحفظ.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-2.5">
+                                    {item.adminComments.map((comment) => (
+                                      <div key={comment.id} className="bg-white p-3 rounded-lg border border-slate-200 flex items-start justify-between gap-3 text-xs">
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-2">
+                                            <span className="font-extrabold text-blue-800 font-sans text-[10px] bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                              👤 {comment.author}
+                                            </span>
+                                            <span className="font-mono text-[9px] text-slate-400">
+                                              {new Date(comment.createdAt).toLocaleString('ar-SA')}
+                                            </span>
+                                          </div>
+                                          <p className="text-slate-700 text-[11px] font-sans leading-relaxed whitespace-pre-wrap">{comment.text}</p>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteInquiryAdminComment(item.id, comment.id)}
+                                          className="text-slate-400 hover:text-red-650 p-1 hover:bg-red-50 rounded"
+                                          title="مسح الملاحظة"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Comment Composer */}
+                                <div className="space-y-2">
+                                  <textarea
+                                    rows={2}
+                                    placeholder="اكتب ملاحظة فنية أو توجيه إداري لحفظ حالة المراجعة داخل هذه التذكرة..."
+                                    value={tmpComments[item.id] || ''}
+                                    onChange={(e) => setTmpComments(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                    className="w-full p-2.5 bg-white border border-slate-250 rounded-lg text-xs font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-slate-900 border-slate-300 placeholder:text-slate-400"
+                                  />
+                                  <div className="flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddInquiryAdminComment(item.id)}
+                                      className="py-1.5 px-3 bg-slate-900 text-white rounded-lg text-[10px] font-black border border-slate-950 hover:bg-slate-800 transition flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <PlusCircle className="w-3.5 h-3.5" />
+                                      <span>حفظ وإضافة الملاحظة الإدارية</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {adminTab === 'customizer' && (
+              <div className="space-y-8 animate-fade-in font-sans text-right animate-fill-both" dir="rtl">
+                {/* Customizer Header Card */}
+                <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                        <span>⚙️</span>
+                        <span>مركز التحكم والتحرير الشامل لمكونات واجهات الموقع</span>
+                      </h3>
+                      <p className="text-slate-500 text-xs mt-1">تعديل فوري ومباشر على كافة نصوص، باقات، خلفيات، وعناصر المنصة الرقمية، وحفظها فورياً.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  {/* Right Side: Inputs Column (8 cols) */}
+                  <div className="lg:col-span-8 space-y-8">
+                    
+                    {/* SECTION 1: HERO CONTAINER & BANNER HEADER */}
+                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 space-y-6 text-right">
+                      <div className="border-b border-slate-100 pb-3">
+                        <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5 text-sm">
+                          <span className="text-purple-600">✨</span>
+                          <span>تعديل واجهة البطل الرئيسية (Hero Header Component)</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400">تخصيص نصوص العناوين الرئيسية وشعار البوابات على واجهة استقبال العملاء.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-slate-700">العنوان الترحيبي العريض (عربي):</label>
+                          <input
+                            type="text"
+                            value={heroTitleAr}
+                            onChange={(e) => setHeroTitleAr(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-sans text-right"
+                            placeholder="مثال: ننجز معاملاتك بكل ثقة وكفاءة"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-left" dir="ltr">
+                          <label className="block text-xs font-bold text-slate-700 font-mono">Hero Bold Header (English):</label>
+                          <input
+                            type="text"
+                            value={heroTitleEn}
+                            onChange={(e) => setHeroTitleEn(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-sans text-left"
+                            placeholder="e.g. We Process Your Transactions with Complete Trust"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-slate-700">شعار بوابة المستفيدين النشطة (عربي):</label>
+                          <input
+                            type="text"
+                            value={portalBadgeAr}
+                            onChange={(e) => setPortalBadgeAr(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-right"
+                            placeholder="مثال: البوابة الرسمية والذكية للمستفيدين"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-left" dir="ltr">
+                          <label className="block text-xs font-bold text-slate-700 font-mono">Active Portal Badge (English):</label>
+                          <input
+                            type="text"
+                            value={portalBadgeEn}
+                            onChange={(e) => setPortalBadgeEn(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-left"
+                            placeholder="e.g. Sama Al-Mamlakah Digital Operations Portal"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-700">رابط صورة الخلفية المخصصة لواجهة البطل (اختياري - يفضل Unsplash/CDN):</label>
+                        <input
+                          type="text"
+                          value={heroBgUrl}
+                          onChange={(e) => setHeroBgUrl(e.target.value)}
+                          className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-left font-mono"
+                          dir="ltr"
+                          placeholder="https://images.unsplash.com/... أو اتركه فارغاً لاستخدام صور مكة المكرمة الكلاسيكية"
+                        />
+                        <p className="text-[10px] text-slate-400">إذا تُرك فارغاً، سيعود النظام تلقائياً لتناوب صور معالم مكة المكرمة الفخمة والخلفيات الافتراضية المدمجة بالمنصة.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-slate-700">نص زر حجز المعاملة والخدمة (عربي):</label>
+                          <input
+                            type="text"
+                            value={bookingBtnTextAr}
+                            onChange={(e) => setBookingBtnTextAr(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-right"
+                            placeholder="اطلب خدمتك الآن"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-left" dir="ltr">
+                          <label className="block text-xs font-bold text-slate-700 font-mono">Booking Button Text (English):</label>
+                          <input
+                            type="text"
+                            value={bookingBtnTextEn}
+                            onChange={(e) => setBookingBtnTextEn(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-left"
+                            placeholder="Request Your Service Now"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-bold text-slate-700">نص زر الاستعلام والمتابعة (عربي):</label>
+                          <input
+                            type="text"
+                            value={trackBtnTextAr}
+                            onChange={(e) => setTrackBtnTextAr(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-right"
+                            placeholder="الاستعلام المباشر عن حالة المعاملة"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-left" dir="ltr">
+                          <label className="block text-xs font-bold text-slate-700 font-mono">Tracking Button Text (English):</label>
+                          <input
+                            type="text"
+                            value={trackBtnTextEn}
+                            onChange={(e) => setTrackBtnTextEn(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-left"
+                            placeholder="Direct Inquiry & Track Status"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION 2: BIOGRAPHICAL WELCOME STATEMENT */}
+                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 space-y-6">
+                      <div className="border-b border-slate-100 pb-3">
+                        <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5 text-sm">
+                          <span className="text-purple-600">📜</span>
+                          <span>البيان الترحيبي الخاص بالزوار والعملاء (About & Welcome Message)</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400">تعديل الكلمة الترحيبية الشاملة على واجهة الاستقبال والتعريف بالمكتب للجمهور.</p>
+                      </div>
+
+                      <div className="space-y-1.5 text-right">
+                        <label className="block text-xs font-bold text-slate-700">النص التعريفي العام للمكتب (يتيح كتل فقرات متعددة):</label>
+                        <textarea
+                          rows={4}
+                          value={welcomeEditor}
+                          onChange={(e) => setWelcomeEditor(e.target.value)}
+                          className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 leading-relaxed text-right"
+                          placeholder="أهلاً ومرحباً بكم في منصة مكتب سما المملكة لمتابعة وإنجاز كافة معاملاتكم..."
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-right">
+                        <div className="flex items-center gap-3">
+                          <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-300 bg-slate-900">
+                            <img src={customLogo || samaLogoImg} alt="شعار الهوية" className="w-full h-full object-cover" />
+                          </div>
+                          <div>
+                            <div className="text-xs font-black text-slate-950">توليد وضبط شعار وهوية المنصة بالذكاء الاصطناعي</div>
+                            <p className="text-[10px] text-slate-500 font-sans">توليد سريع وتعديل شعار مكتب سما المملكة للخدمات فوريًا بمجرد نقرة زر.</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsLogoModalOpen(true)}
+                          className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-505 hover:to-blue-505 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer transition-transform active:scale-97"
+                        >
+                          ⚙️ تخصيص وتوليد الشعار بالذكاء الاصطناعي
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SECTION 3: REGIONAL IMPACT STATS */}
+                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 space-y-6">
+                      <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                        <div>
+                          <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5 text-sm">
+                            <span className="text-purple-600">🌍</span>
+                            <span>خارطة الانتشار الجغرافي واللوجيستي ومستفيدي النشر الشامل</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400">إدارة أرقام المنجز والمستهدف لقارات آسيا وأفريقيا وأوروبا لتعزيز الثقة الرقمية.</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-700">تفعيل القسم بالموقع:</span>
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={showRegionalNetwork}
+                              onChange={(e) => setShowRegionalNetwork(e.target.checked)}
+                              className="sr-only peer"
+                            />
+                            <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1.5 col-span-1">
+                          <label className="block text-xs font-bold text-slate-700">تغطية الجمهور بقارة آسيا (مستفيد):</label>
+                          <input
+                            type="number"
+                            value={beneficiariesAsia}
+                            onChange={(e) => setBeneficiariesAsia(Number(e.target.value))}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                          />
+                        </div>
+                        <div className="space-y-1.5 col-span-1">
+                          <label className="block text-xs font-bold text-slate-700">تغطية الجمهور بقارة أفريقيا (مستفيد):</label>
+                          <input
+                            type="number"
+                            value={beneficiariesAfrica}
+                            onChange={(e) => setBeneficiariesAfrica(Number(e.target.value))}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                          />
+                        </div>
+                        <div className="space-y-1.5 col-span-1">
+                          <label className="block text-xs font-bold text-slate-700">تغطية الجمهور بقارة أوروبا والأمريكتين (مستفيد):</label>
+                          <input
+                            type="number"
+                            value={beneficiariesEurope}
+                            onChange={(e) => setBeneficiariesEurope(Number(e.target.value))}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECTION 4: CONTACT & PHYSICAL FOOTER META */}
+                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200 space-y-6">
+                      <div className="border-b border-slate-100 pb-3">
+                        <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5 text-sm">
+                          <span className="text-purple-600">🏢</span>
+                          <span>معلومات العنوان والاتصال وأوقات العمل والنزاهة القانونية</span>
+                        </h4>
+                        <p className="text-[11px] text-slate-400">تخصيص البيانات التفصيلية لتواصل دائم وموثوق وتأمين الترخيص الرقابي بمذيلات الموقع.</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1.5 text-right">
+                          <label className="block text-xs font-bold text-slate-700">عنوان المقر الفعلي والموقع الجغرافي للمكتب:</label>
+                          <input
+                            type="text"
+                            value={officeAddressAr}
+                            onChange={(e) => setOfficeAddressAr(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                            placeholder="الرياض، المملكة العربية السعودية"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-right">
+                          <label className="block text-xs font-bold text-slate-700">رقم هاتف الاتصال والدعم المعمم الفوري:</label>
+                          <input
+                            type="text"
+                            value={officePhone}
+                            onChange={(e) => setOfficePhone(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-left font-mono"
+                            dir="ltr"
+                            placeholder="+966 50 000 0050"
+                          />
+                        </div>
+                        <div className="space-y-1.5 text-right">
+                          <label className="block text-xs font-bold text-slate-700 font-sans">ساعات وأيام العمل المعتمدة بالمقر:</label>
+                          <input
+                            type="text"
+                            value={operatingHoursAr}
+                            onChange={(e) => setOperatingHoursAr(e.target.value)}
+                            className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 text-right"
+                            placeholder="يومياً من ٨:٠٠ ص حتى ٩:٠٠ م"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 text-right">
+                        <label className="block text-xs font-bold text-slate-700">بيان ترخيص الامتثال الرقابي لوزارة الموارد البشرية والعمل السعودية:</label>
+                        <textarea
+                          rows={3}
+                          value={officeLicenceAr}
+                          onChange={(e) => setOfficeLicenceAr(e.target.value)}
+                          className="w-full text-xs p-3 rounded-lg border border-slate-250 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-sans leading-relaxed text-right text-xs"
+                          placeholder="مكتب سما المملكة مرخص ومسجل وبإشراف مطابق لمعايير العمل..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* SECTION 5: GOOGLE GROUNDING LIVE NEWS WIDGET STATUS */}
+                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-extrabold text-slate-900 flex items-center gap-1.5 text-sm/relaxed">
+                            <span className="text-blue-500 font-semibold animate-pulse">🛰️</span>
+                            <span>بوابة أخبار مستجدات قوى ومساند للعمل والعمال بوزارة الموارد البشرية (Google Grounding Live News)</span>
+                          </h4>
+                          <p className="text-[11px] text-slate-400">تفعيل أو إبطال إظهار بوابة الأخبار الذكية للتأصيل الحي لقرارات وأنظمة العمل السعودية على الصفحة الرئيسية.</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showNewsGroundingHome}
+                            onChange={(e) => setShowNewsGroundingHome(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:right-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 animate-pulse"></div>
+                        </label>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Left Side: Save Panel & Preview Actions Dashboard */}
+                  <div className="lg:col-span-4 space-y-6">
+                    <div className="bg-gradient-to-br from-slate-900 to-slate-950 p-6 rounded-xl shadow-lg border border-slate-800 text-slate-100 space-y-6 text-right">
+                      <h4 className="font-extrabold text-amber-500 flex items-center gap-1.5 pb-3 border-b border-slate-850 text-sm">
+                        <span>💾</span>
+                        <span>لوحة ترحيل البيانات وحفظ التخصيص</span>
+                      </h4>
+
+                      <div className="space-y-4 text-xs text-slate-400">
+                        <div className="flex justify-between">
+                          <span>اللغات المدعومة للتخصيص:</span>
+                          <span className="text-white font-bold">العربية والإنجليزية</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>نطاق ترحيل التعديلات:</span>
+                          <span className="text-white font-bold">فوري وحي على الواجهات</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>آلية تخزين التغييرات:</span>
+                          <span className="text-white font-bold">تخزين رقمي دائم (Local Store)</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          localStorage.setItem('sm_hero_title_ar', heroTitleAr);
+                          localStorage.setItem('sm_hero_title_en', heroTitleEn);
+                          localStorage.setItem('sm_portal_badge_ar', portalBadgeAr);
+                          localStorage.setItem('sm_portal_badge_en', portalBadgeEn);
+                          localStorage.setItem('sm_hero_bg_url', heroBgUrl);
+                          localStorage.setItem('sm_booking_btn_text_ar', bookingBtnTextAr);
+                          localStorage.setItem('sm_booking_btn_text_en', bookingBtnTextEn);
+                          localStorage.setItem('sm_track_btn_text_ar', trackBtnTextAr);
+                          localStorage.setItem('sm_track_btn_text_en', trackBtnTextEn);
+                          localStorage.setItem('sm_show_regional_network', showRegionalNetwork ? 'true' : 'false');
+                          localStorage.setItem('sm_beneficiaries_asia', String(beneficiariesAsia));
+                          localStorage.setItem('sm_beneficiaries_africa', String(beneficiariesAfrica));
+                          localStorage.setItem('sm_beneficiaries_europe', String(beneficiariesEurope));
+                          localStorage.setItem('sm_office_address_ar', officeAddressAr);
+                          localStorage.setItem('sm_office_phone', officePhone);
+                          localStorage.setItem('sm_operating_hours_ar', operatingHoursAr);
+                          localStorage.setItem('sm_office_licence_ar', officeLicenceAr);
+                          localStorage.setItem('sm_show_news_grounding', showNewsGroundingHome ? 'true' : 'false');
+                          localStorage.setItem('sm_welcome_msg', welcomeEditor);
+                          setWelcomeMessage(welcomeEditor);
+
+                          triggerAlert('✅ تم حفظ وترحيل كامل التغييرات المخصصة للمكونات بنجاح! وقد تم تعميم التحديثات ومطابقتها فورياً على واجهات استقبال زوار مكتب سما المملكة.');
+                        }}
+                        className="w-full py-4 bg-amber-600 hover:bg-amber-500 text-slate-950 font-extrabold text-xs sm:text-sm rounded-xl cursor-pointer shadow-lg hover:shadow-amber-500/20 transition-all text-center flex items-center justify-center gap-2 border border-amber-400"
+                      >
+                        <span>تأكيد الحفظ وترحيل التغييرات فورا</span>
+                      </button>
+                    </div>
+
+                    <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 text-slate-700 text-right space-y-3 shadow-2xs">
+                      <div className="text-xs font-black text-slate-900">💡 تلميحات إدارة المكونات:</div>
+                      <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
+                        - بمجرد الضغط على الحفظ، تظهر كامل التحديثات على المنصة في الوقت الفعلي. يمكنك التبديل فوراً إلى تبويب "الرئيسية" بالأعلى لمعاينتها.
+                      </p>
+                      <p className="text-[11px] text-slate-600 leading-relaxed font-sans">
+                        - لإخفاء قسم الانتشار الجغرافي، قم بإلغاء خيار التفعيل بالأعلى المكتوب بجانبه "تفعيل القسم بالموقع" وحفظ العملية.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+
               </div>
             )}
 
@@ -9356,12 +10294,40 @@ export default function App() {
 
             {/* Quick action footer tabs */}
             <div className="flex flex-wrap gap-4 text-xs font-bold text-slate-400">
-              <button onClick={() => { setActiveTab('home'); window.scrollTo(0,0); }} className="hover:text-amber-500">الرئيسية</button>
+              <button onClick={() => { setActiveTab('home'); window.scrollTo(0,0); }} className="hover:text-amber-500">{lang === 'en' ? 'Home' : 'الرئيسية'}</button>
               <span>•</span>
-              <button onClick={() => { setActiveTab('track'); window.scrollTo(0,0); }} className="hover:text-amber-500">الاستعلام المباشر</button>
+              <button onClick={() => { setActiveTab('track'); window.scrollTo(0,0); }} className="hover:text-amber-500">{lang === 'en' ? 'Direct Tracking' : 'الاستعلام المباشر'}</button>
               <span>•</span>
-              <button onClick={() => { setActiveTab('admin'); window.scrollTo(0,0); }} className="hover:text-amber-500">منطقة الإدارة المالية</button>
+              <button onClick={() => { setActiveTab('admin'); window.scrollTo(0,0); }} className="hover:text-amber-500">{lang === 'en' ? 'Admin Dashboard' : 'لوحة التحكم والعمليات'}</button>
             </div>
+          </div>
+
+          {/* Office Customizer Info Hub */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-slate-900 text-right text-xs">
+            <div className="space-y-1.5">
+              <div className="text-white font-bold flex items-center justify-end gap-1.5">
+                <span>{lang === 'en' ? '📍 Office Location & Address' : '📍 موقع وعناوين المكتب'}</span>
+              </div>
+              <p className="text-slate-400">{officeAddressAr}</p>
+            </div>
+            
+            <div className="space-y-1.5">
+              <div className="text-white font-bold flex items-center justify-end gap-1.5">
+                <span>{lang === 'en' ? '☎️ Fast Contact & Support' : '☎️ الاتصال والدعم الفوري'}</span>
+              </div>
+              <p className="text-slate-400 font-mono" dir="ltr">{officePhone}</p>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="text-white font-bold flex items-center justify-end gap-1.5">
+                <span>{lang === 'en' ? '🕒 Operating Hours' : '🕒 مواعيد العمل والمراجعة'}</span>
+              </div>
+              <p className="text-slate-400">{operatingHoursAr}</p>
+            </div>
+          </div>
+
+          <div className={`pt-4 text-xs text-slate-500 leading-relaxed bg-slate-900/30 p-4 rounded-xl border border-slate-900 ${lang === 'en' ? 'text-left' : 'text-right'}`}>
+            <strong>{lang === 'en' ? 'Compliance & Licensing Info:' : 'بيان الترخيص الرقابي والامتثال:'}</strong> {officeLicenceAr}
           </div>
 
           <div className="flex flex-col sm:flex-row justify-between items-center text-[11px] gap-2">
@@ -9463,7 +10429,7 @@ export default function App() {
                         <strong className="text-slate-900 font-bold block">{infoPopupService.govFee.toFixed(2)} ر.س</strong>
                       </p>
                       <p className="flex justify-between items-center bg-white p-2 rounded border border-slate-200">
-                        <span className="font-sans text-slate-500 block">أتعاب مراجعة مكتب سما المملكة الإستخلاصي:</span>
+                        <span className="font-sans text-slate-500 block">أتعاب مراجعة مكتب سما المملكة الاستخلاصي:</span>
                         <strong className="text-slate-900 font-bold block">{infoPopupService.officeFee.toFixed(2)} ر.س</strong>
                       </p>
                       <p className="flex justify-between items-center bg-white p-2 rounded border border-slate-300">
@@ -10068,6 +11034,102 @@ export default function App() {
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all border border-slate-750 hover:border-slate-700 cursor-pointer"
               >
                 {lang === 'ar' ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <LogoCustomizerModal
+        isOpen={isLogoModalOpen}
+        onClose={() => setIsLogoModalOpen(false)}
+        lang={lang}
+        currentLogo={customLogo}
+        onLogoChange={(newLogo) => {
+          if (newLogo) {
+            localStorage.setItem('sama_custom_logo', newLogo);
+            setCustomLogo(newLogo);
+          } else {
+            localStorage.removeItem('sama_custom_logo');
+            setCustomLogo(null);
+          }
+        }}
+        defaultLogoUrl={samaLogoImg}
+      />
+
+      {/* ==================== CUSTOM ALERT MODAL ==================== */}
+      {customAlertModal && customAlertModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in" dir="rtl">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setCustomAlertModal(null)}
+              className="absolute top-4 left-4 p-1 rounded-full text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600">
+                <Sparkles className="w-5 h-5 animate-pulse text-amber-500" />
+              </div>
+              <h4 className="font-extrabold text-sm text-slate-900">مكتب سما المملكة - إشعار النظام</h4>
+            </div>
+
+            <div className="text-xs text-slate-700 font-medium leading-relaxed mb-6 whitespace-pre-line bg-slate-50 p-4 rounded-xl border border-slate-100">
+              {customAlertModal.message}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setCustomAlertModal(null)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-6 py-2 rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
+              >
+                حسناً، فهمت
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== CUSTOM CONFIRMATION MODAL ==================== */}
+      {customConfirmModal && customConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in" dir="rtl">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setCustomConfirmModal(null)}
+              className="absolute top-4 left-4 p-1 rounded-full text-slate-400 hover:text-slate-900 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-600">
+                <AlertCircle className="w-5 h-5 text-amber-500" />
+              </div>
+              <h4 className="font-extrabold text-sm text-slate-900">تأكيد الإجراء المطلوب</h4>
+            </div>
+
+            <p className="text-xs text-slate-700 font-medium leading-relaxed mb-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
+              {customConfirmModal.message}
+            </p>
+
+            <div className="flex gap-2.5 justify-end">
+              <button
+                type="button"
+                onClick={() => setCustomConfirmModal(null)}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-97 cursor-pointer"
+              >
+                إلغاء التراجع
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  customConfirmModal.onConfirm();
+                }}
+                className="bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs px-6 py-2 rounded-xl transition-all shadow-md active:scale-97 cursor-pointer"
+              >
+                تأكيد ومتابعة
               </button>
             </div>
           </div>

@@ -304,6 +304,26 @@ export const INITIAL_JOBS: Job[] = [
   }
 ];
 
+export interface AdminComment {
+  id: string;
+  text: string;
+  createdAt: string;
+  author: string;
+}
+
+export interface ContactInquiry {
+  id: string;
+  name: string;
+  email: string;
+  subject: string;
+  message: string;
+  createdAt: string; // ISO string
+  status: 'new' | 'processing' | 'resolved';
+  priority?: 'low' | 'medium' | 'high';
+  adminComments?: AdminComment[];
+}
+
+
 export const INITIAL_ANNOUNCEMENTS: Announcement[] = [
   {
     id: 'ann-1',

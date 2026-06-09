@@ -16,6 +16,69 @@
         } catch (e) {
           console.warn("Could not patch window.fetch setter:", e);
         }
+
+        // Patch WebSocket to gracefully block dev environment HMR socket connection attempts and avoid benign console errors/warnings
+        try {
+          var OriginalWS = window.WebSocket;
+          if (OriginalWS) {
+            var CustomWS = function(url, protocols) {
+              if (protocols === 'vite-hmr' || (typeof url === 'string' && (url.includes('/vite') || url.includes('vite-hmr')))) {
+                var listeners = {};
+                var dummy = {
+                  url: url,
+                  readyState: 1, // OPEN
+                  bufferedAmount: 0,
+                  extensions: "",
+                  protocol: "",
+                  binaryType: "blob",
+                  send: function() {},
+                  close: function() {
+                    this.readyState = 3; // CLOSED
+                    if (typeof this.onclose === 'function') {
+                      this.onclose({ type: 'close' });
+                    }
+                    if (listeners['close']) {
+                      listeners['close'].forEach(function(cb) { cb({ type: 'close' }); });
+                    }
+                  },
+                  addEventListener: function(type, cb) {
+                    if (!listeners[type]) listeners[type] = [];
+                    listeners[type].push(cb);
+                  },
+                  removeEventListener: function(type, cb) {
+                    if (listeners[type]) {
+                      listeners[type] = listeners[type].filter(function(item) { return item !== cb; });
+                    }
+                  },
+                  dispatchEvent: function() { return true; },
+                  onopen: null,
+                  onerror: null,
+                  onclose: null,
+                  onmessage: null
+                };
+                setTimeout(function() {
+                  if (typeof dummy.onopen === 'function') {
+                    dummy.onopen({ type: 'open' });
+                  }
+                  if (listeners['open']) {
+                    listeners['open'].forEach(function(cb) { cb({ type: 'open' }); });
+                  }
+                }, 10);
+                return dummy;
+              }
+              return new OriginalWS(url, protocols);
+            };
+            CustomWS.prototype = OriginalWS.prototype;
+            for (var prop in OriginalWS) {
+              if (OriginalWS.hasOwnProperty(prop)) {
+                CustomWS[prop] = OriginalWS[prop];
+              }
+            }
+            window.WebSocket = CustomWS;
+          }
+        } catch (e) {
+          // Silent fallback
+        }
       })();
     </script>
     <title>My Google AI Studio App</title>
